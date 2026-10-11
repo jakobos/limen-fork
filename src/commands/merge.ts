@@ -1,7 +1,10 @@
 import { requirePermission } from "../project/approval.ts";
 import { defaultBranch, onlyJob, ownerRepo, remoteJob, run } from "./push.ts";
 
-/** Sets auto-merge on the job's PR; GitHub merges only after the base branch's required checks pass. */
+/**
+ * Sets auto-merge on the job's PR in the origin repository; GitHub merges only after the base branch's required
+ * checks pass, and only while the PR head is still the commit the gate checked.
+ */
 export async function mergeCommand(args: readonly string[], cwd: string): Promise<void> {
 	const job = await remoteJob(cwd, onlyJob(args, "merge"));
 	requirePermission(job.effective, "canMerge", {
@@ -10,11 +13,13 @@ export async function mergeCommand(args: readonly string[], cwd: string): Promis
 		head: job.head,
 		actions: ["merge"],
 	});
+	const repo = ownerRepo(job.repository);
 	const base = defaultBranch(job.repository);
-	if (!requiresChecks(job.repository, ownerRepo(job.repository), base)) {
+	if (!requiresChecks(job.repository, repo, base)) {
 		throw new Error("merge needs CI; this branch has no required checks");
 	}
-	const merge = ["pr", "merge", job.branch, "--auto", `--${job.effective.mergeMethod}`];
+	const pinned = ["--match-head-commit", job.head, "-R", repo];
+	const merge = ["pr", "merge", job.branch, "--auto", `--${job.effective.mergeMethod}`, ...pinned];
 	console.log(run(job.repository, "gh", merge, "inherit"));
 }
 

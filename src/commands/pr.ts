@@ -5,7 +5,7 @@ import { requirePermission } from "../project/approval.ts";
 import { packageRoot } from "../project/inherit.ts";
 import { changePointers } from "../project/planning.ts";
 import { parseFlags } from "./flags.ts";
-import { defaultBranch, pushJob, type RemoteJob, remoteJob, run, text } from "./push.ts";
+import { defaultBranch, ownerRepo, pushJob, type RemoteJob, remoteJob, run, text } from "./push.ts";
 
 /** `limen pr <job> --body-file F [--title T]` opens the PR; `limen pr --template <job>` prints the filled template. */
 export async function prCommand(args: readonly string[], cwd: string): Promise<void> {
@@ -37,7 +37,8 @@ export async function prCommand(args: readonly string[], cwd: string): Promise<v
 	const title = values.title ?? (await changeTitle(job)) ?? job.label;
 	const base = defaultBranch(job.repository);
 	const create = ["pr", "create", "--head", job.branch, "--base", base, "--title", title || job.branch];
-	console.log(run(job.repository, "gh", [...create, "--body-file", resolve(cwd, bodyFile)], "inherit"));
+	const body = ["--body-file", resolve(cwd, bodyFile), "-R", ownerRepo(job.repository)];
+	console.log(run(job.repository, "gh", [...create, ...body], "inherit"));
 }
 
 /** The first template found (§4.7) with its tokens filled. */

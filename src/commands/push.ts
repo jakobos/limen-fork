@@ -41,9 +41,9 @@ export async function remoteJob(cwd: string, query: string): Promise<RemoteJob> 
 }
 
 /**
- * `git push -u origin <branch>` once the gate holds. A protected branch (the default branch or a `protected`
- * pattern of the matched rule) needs canMerge instead of canPush. `approvals` lists the actions whose approval
- * at the branch head lets an `ask` through.
+ * Pushes the head the gate checked, not the moving branch name, then sets the upstream. A protected branch (the
+ * default branch or a `protected` pattern of the matched rule) needs canMerge instead of canPush. `approvals` lists
+ * the actions whose approval at the branch head lets an `ask` through.
  */
 export function pushJob(job: RemoteJob, approvals: readonly ApprovalAction[]): void {
 	const protectedBranch =
@@ -56,13 +56,15 @@ export function pushJob(job: RemoteJob, approvals: readonly ApprovalAction[]): v
 		head: job.head,
 		actions: approvals,
 	});
-	run(job.repository, "git", ["push", "-u", "origin", job.branch], "inherit");
+	run(job.repository, "git", ["push", "origin", `${job.head}:refs/heads/${job.branch}`], "inherit");
+	run(job.repository, "git", ["branch", "--set-upstream-to", `origin/${job.branch}`, job.branch]);
 	console.log(`pushed ${job.branch} at ${job.head.slice(0, 12)}`);
 }
 
-/** The repository's default branch, as GitHub reports it. */
+/** The default branch of the origin repository, as GitHub reports it. */
 export function defaultBranch(repository: string): string {
-	const name = run(repository, "gh", ["repo", "view", "--json", "defaultBranchRef", "-q", ".defaultBranchRef.name"]);
+	const query = ["--json", "defaultBranchRef", "-q", ".defaultBranchRef.name"];
+	const name = run(repository, "gh", ["repo", "view", ownerRepo(repository), ...query]);
 	if (!name) {
 		throw new Error("gh repo view reported no default branch");
 	}

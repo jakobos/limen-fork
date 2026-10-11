@@ -8,6 +8,9 @@ import { remoteJob } from "./push.ts";
  * the branch head of this moment. An agent's tool shell has no terminal, so it cannot answer.
  */
 export async function approveCommand(args: readonly string[], cwd: string): Promise<void> {
+	if (process.env.LIMEN_JOB === "1") {
+		throw new Error("limen approve is for the owner's own terminal, not a job session");
+	}
 	const [query, action, ...extra] = args.filter((word) => word !== "");
 	const known = APPROVAL_ACTIONS.find((each) => each === action);
 	if (!query || !known || extra.length > 0) {

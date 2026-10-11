@@ -16,7 +16,8 @@ test("push, pr and merge follow permissions, approvals at the branch head, and r
 	const gh = `echo "$*" >> ${log}\ncase "$*" in\n"repo view"*) echo main ;;\n"api repos/"*/rules/branches/main) cat ${rules} ;;\n`;
 	await writeFile(join(p.bin, "gh"), `#!/bin/sh\n${gh}"api "*) exit 1 ;;\nesac\n`, { mode: 0o755 });
 	git(p.parent, "init", "-q", "--bare", remote);
-	git(p.root, "remote", "add", "origin", remote);
+	git(p.root, "config", `url.${remote}.pushInsteadOf`, "https://github.com/acme/demo");
+	git(p.root, "remote", "add", "origin", "https://github.com/acme/demo");
 	const base = git(p.root, "rev-parse", "HEAD");
 	git(p.root, "switch", "-q", "-c", "limen/demo");
 	git(p.root, "commit", "-q", "--allow-empty", "-m", "first");
@@ -42,13 +43,17 @@ test("push, pr and merge follow permissions, approvals at the branch head, and r
 	assert.match(template, /^- [0-9a-f]+ second\n- [0-9a-f]+ first$/m);
 	await writeFile(body, template);
 	assert.equal(limen(p, ["pr", id, "--body-file", body]).status, 0);
-	const create = `pr create --head limen/demo --base main --title The demo plant has one change --body-file ${body}`;
+	const create = `pr create --head limen/demo --base main --title The demo plant has one change --body-file ${body} -R acme/demo`;
 	assert.ok((await readFile(log, "utf8")).includes(create));
 
 	assert.equal(limen(p, ["merge", id]).stderr.trim(), "merge needs CI; this branch has no required checks");
 	await writeFile(rules, JSON.stringify([{ type: "required_status_checks", parameters: {} }]));
 	assert.equal(limen(p, ["merge", id]).status, 0);
-	assert.match(await readFile(log, "utf8"), /^pr merge limen\/demo --auto --squash$/m);
+	const head = git(p.root, "rev-parse", "HEAD");
+	assert.match(
+		await readFile(log, "utf8"),
+		new RegExp(`^pr merge limen/demo --auto --squash --match-head-commit ${head} -R acme/demo$`, "m"),
+	);
 
 	const options = { cwd: p.root, env: p.env, encoding: "utf8", stdio: "pipe" } as const;
 	const approve = spawnSync("setsid", ["-w", process.execPath, LIMEN, "approve", id, "push"], options);
