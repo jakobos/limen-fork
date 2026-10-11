@@ -4,8 +4,7 @@ Standing choices for this project. The coordinator reads them before every spawn
 
 ## Models
 
-- `.agents/limen/models.json` holds the engine, provider, model, and reasoning per role: OMP with `openai-codex/gpt-6.1-sol`, `high` for ordinary jobs, `xhigh` for coordination, research, and quality.
-- Simple or cheap tasks and UI-related work use `anthropic/claude-opus-5-5` on OMP. Pass it as flags on that job.
+- `.agents/limen/models.json` holds the engine, provider, model, and reasoning per role (owner, 2026-10-11): ordinary work uses `anthropic/claude-sonnet-4-6` on OMP at `high`; research and quality use `google-antigravity/gemini-2.5-flash` on OMP at `xhigh`; the coordinator uses `anthropic/claude-opus-5-5` on OMP at `high`.
 - The scout (`pi-claude/claude-haiku-5-5`, `medium`) runs only the read-only scout before a spawn. Never for edits, landing, review of record, group hypotheses, synthesis, or owner-facing text.
 - Research uses the research model for both independent opinions. Judge and picture use the ordinary model.
 
