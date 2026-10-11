@@ -1,3 +1,4 @@
+import { approveCommand } from "./commands/approve.ts";
 import { permissionsCommand } from "./commands/autonomy-report.ts";
 import { boardCommand } from "./commands/board.ts";
 import { changeAuthorCommand } from "./commands/change-author.ts";
@@ -13,10 +14,13 @@ import { jobsCommand } from "./commands/jobs.ts";
 import { keeperCommand } from "./commands/keeper.ts";
 import { landCommand } from "./commands/land.ts";
 import { linearCommand } from "./commands/linear.ts";
+import { mergeCommand } from "./commands/merge.ts";
 import { openCommand } from "./commands/open.ts";
 import { pictureCommand } from "./commands/picture.ts";
 import { planningCommand } from "./commands/planning-source.ts";
+import { prCommand } from "./commands/pr.ts";
 import { pruneCommand } from "./commands/prune.ts";
+import { pushCommand } from "./commands/push.ts";
 import { spawnCommand } from "./commands/spawn.ts";
 import { statusCommand } from "./commands/status.ts";
 import { steerCommand } from "./commands/steer.ts";
@@ -59,6 +63,10 @@ const COMMANDS = {
 	"change-author": changeAuthorCommand,
 	webhook: webhookCommand,
 	permissions: permissionsCommand,
+	push: pushCommand,
+	pr: prCommand,
+	merge: mergeCommand,
+	approve: approveCommand,
 } as const satisfies Record<
 	| "init"
 	| "workspace"
@@ -88,7 +96,11 @@ const COMMANDS = {
 	| "change"
 	| "change-author"
 	| "webhook"
-	| "permissions",
+	| "permissions"
+	| "push"
+	| "pr"
+	| "merge"
+	| "approve",
 	Command
 >;
 const HELP = `limen — isolated coding jobs with files and git
@@ -129,6 +141,11 @@ usage:
   limen change check [BRANCH]                    # land gate on demand: change folders BRANCH adds or changes; run before a hand git merge
   limen change-author <change-folder>            # creation-commit author of change.md or effort.md, following Git renames
   limen permissions [--repo R] [--role X] [--check-remote]  # effective canCommit/canPush/canOpenPr/canMerge and the layer that set each; --check-remote compares GitHub rulesets (read-only)
+  limen push <id|suffix|label>                    # git push -u origin <branch>; canPush, or canMerge for a protected branch
+  limen pr <id|suffix|label> --body-file F [--title T]  # canOpenPr; pushes first, then gh pr create against the default branch
+  limen pr --template <id|suffix|label>           # print the PR template with change, job, branch, commits and profile filled
+  limen merge <id|suffix|label>                   # canMerge; gh pr merge --auto once the base requires status checks
+  limen approve <id|suffix|label> <push|pr|merge>  # human only, on /dev/tty: approve an ask permission for the branch head
   limen sweep [--install|--uninstall]
   limen webhook test                             # send one test ping to this plant's finish webhook targets
   limen linear [on [--team T --project P]|off|status]   # Linear mirror toggle — renames .agents/limen/linear.md ↔ .off; --team/--project write a fresh config

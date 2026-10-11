@@ -100,6 +100,24 @@ Each of `canCommit`, `canPush`, `canOpenPr` and `canMerge` is the strictest of t
 
 `--repo` reads another repository root. `--role X` computes the values for a job with that role; `coordinator` means the interactive coordinator. `--check-remote` reads the GitHub rulesets on the default branch and on each literal `protected` branch with `gh api`, and warns when `canMerge` is `ask` or `deny` without a pull request rule, or `allow` without required status checks. It changes nothing.
 
+### Push, PR and merge
+
+Agents never push, open PRs, or merge directly. The coordinator does it through these commands, which check the permissions above for the caller's role. Inside a job session the role ceiling denies them.
+
+```text
+limen push <id|suffix|label>
+limen pr <id|suffix|label> --body-file F [--title T]
+limen pr --template <id|suffix|label>
+limen merge <id|suffix|label>
+limen approve <id|suffix|label> <push|pr|merge>
+```
+
+`push` runs `git push -u origin <branch>` and needs `canPush`. When the job branch is the default branch or matches a `protected` pattern, it needs `canMerge` instead. `pr` needs `canOpenPr` and the push rules, because it pushes first. It then runs `gh pr create` against the default branch. The title is `--title`, else the `title` of the change that the job's `Change:` line names, else the job label. `pr --template` prints the PR template with its tokens filled. It reads `.agents/limen/pr-template.md`, then `.github/pull_request_template.md`, then the package `templates/pr.md`. Write the prose sections, then pass the file with `--body-file`.
+
+`merge` needs `canMerge` and runs `gh pr merge <branch> --auto --<mergeMethod>`, so GitHub merges only after the checks pass. It refuses with "merge needs CI; this branch has no required checks" when neither the rulesets nor the branch protection of the base branch require a status check.
+
+A value of `ask` needs an approval. You run `limen approve` in your own terminal and type the job id again. The approval holds only for the branch head at that moment, so a new commit makes it invalid. An approval for `pr` also lets its push through. Without a terminal, `approve` exits 1.
+
 ### Changes
 
 Changes are created and closed with dx skills in the coordinator: `/dx-new`, `/dx-frame`, `/dx-plan`, `/dx-archive`. Limen reads them, checks them, and drops them.
