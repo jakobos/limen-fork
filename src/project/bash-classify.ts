@@ -9,8 +9,24 @@ type Found = { readonly action: BashAction; readonly permission?: Permission };
 type Words = Readonly<Record<string, true>>;
 const set = (text: string): Words => Object.fromEntries(text.split(" ").map((word) => [word, true]));
 const SHELLS = set("bash sh zsh dash");
-const WRAPPERS = set("env command sudo exec nohup time");
-const WRAPPER_VALUES = set("-u -g -C -D -U -r -t -T -a -o -f");
+/** Shell words that may stand before a command name: `then git push`, `{ git push; }`, `! git push`. */
+const RESERVED = set("if then else elif do while until { ! case");
+type Wrapper = { readonly values: Words; readonly operands: number };
+const wrapper = (values: string, operands = 0): Wrapper => ({ values: set(values), operands });
+/** Commands that run the command after them; `values` are their options that take a value. */
+const WRAPPERS: Record<string, Wrapper> = {
+	env: wrapper("-u --unset -C --chdir -S --split-string"),
+	command: wrapper(""),
+	sudo: wrapper("-u -g -C -D -U -r -t -T -h -p"),
+	exec: wrapper("-a"),
+	nohup: wrapper(""),
+	time: wrapper("-o -f --output --format"),
+	timeout: wrapper("-s --signal -k --kill-after", 1),
+	nice: wrapper("-n --adjustment"),
+	stdbuf: wrapper("-i -o -e --input --output --error"),
+	xargs: wrapper("-a --arg-file -d --delimiter -E -I -L -n --max-args -P --max-procs -s --max-chars"),
+};
+const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
 const GIT_VALUES = set("-C -c --git-dir --work-tree --namespace --config-env");
 const COMMIT_VERBS = set("commit merge rebase cherry-pick am revert commit-tree pull");
 const GH_VALUES = set(
@@ -39,37 +55,124 @@ const REDIRECT = /^(\d*|&)>/;
 const READ_METHOD = /^(GET|HEAD)$/i;
 
 /**
- * Every guarded action a shell command line takes, including inside `$(...)`, backticks and `bash -c` strings.
- * Unknown commands add nothing. `home` is the expanded home directory, for protected-path matches.
+ * Every guarded action a shell command line takes, including inside `$(...)`, backticks, `bash -c` strings and
+ * unquoted heredoc bodies. Comments and heredoc text are not commands. Unknown commands add nothing.
+ * `home` is the expanded home directory, for protected-path matches.
  */
 export function classifyBash(line: string, home: string): BashFinding[] {
-	const { outer, inner } = substitutions(line);
+	const lexer = tokenize(line);
 	return [
-		...inner.flatMap((text) => classifyBash(text, home)),
-		...segments(outer).flatMap((words) => classifyWords(words, home)),
+		...lexer.inner.flatMap((text) => classifyBash(text, home)),
+		...lexer.result.flatMap((words) => classifyWords(words, home)),
 	];
 }
 
-/** Pulls `$(...)` and backtick bodies out of a line; single quotes keep them literal. */
-function substitutions(line: string): { outer: string; inner: string[] } {
-	const inner: string[] = [];
-	let outer = "";
-	let single = false;
-	for (let index = 0; index < line.length; index++) {
-		const char = line[index] ?? "";
-		const opens = !single && (char === "`" || line.startsWith("$(", index));
-		if (!opens) {
-			single = char === "'" ? !single : single;
-			outer += char === "\\" && !single ? char + (line[++index] ?? "") : char;
-			continue;
-		}
-		const end = char === "`" ? line.indexOf("`", index + 1) : closingParen(line, index + 2);
-		const stop = end < 0 ? line.length : end;
-		inner.push(line.slice(index + (char === "`" ? 1 : 2), stop));
-		outer += " _ ";
-		index = stop;
+type Heredoc = { readonly delimiter: string; readonly strip: boolean; readonly expand: boolean };
+type Lexer = {
+	readonly text: string;
+	index: number;
+	result: string[][];
+	words: string[];
+	word: string | undefined;
+	inner: string[];
+	heredocs: Heredoc[];
+};
+
+/**
+ * One pass over a command line: splits on unquoted `;`, `&&`, `||`, `|`, `&`, newlines and parentheses, unquotes
+ * each word, drops `#` comments, skips heredoc bodies, and collects `$(...)` and backtick bodies in `inner`.
+ */
+function tokenize(text: string): Lexer {
+	const lexer: Lexer = { text, index: 0, result: [], words: [], word: undefined, inner: [], heredocs: [] };
+	while (lexer.index < text.length) {
+		step(lexer);
 	}
-	return { outer, inner };
+	endSegment(lexer);
+	lexer.result = lexer.result.filter((entry) => entry.length > 0);
+	return lexer;
+}
+
+/** Consumes one unquoted token: a character, a quoted string, a substitution, a comment or a heredoc operator. */
+function step(lexer: Lexer): void {
+	const { text, index } = lexer;
+	const char = text[index] ?? "";
+	const found = substitutionAt(text, index);
+	lexer.index = index + 1;
+	if (char === "'") {
+		const end = text.indexOf("'", index + 1);
+		lexer.word = (lexer.word ?? "") + text.slice(index + 1, end < 0 ? text.length : end);
+		lexer.index = end < 0 ? text.length : end + 1;
+	} else if (char === '"') {
+		doubleQuoted(lexer);
+	} else if (char === "\\") {
+		const next = text[index + 1] ?? "";
+		lexer.word = next === "\n" ? lexer.word : (lexer.word ?? "") + next;
+		lexer.index = index + 2;
+	} else if (found) {
+		lexer.inner.push(found.body);
+		lexer.word = `${lexer.word ?? ""}_`;
+		lexer.index = found.end + 1;
+	} else if (char === "#" && lexer.word === undefined) {
+		const end = text.indexOf("\n", index);
+		lexer.index = end < 0 ? text.length : end;
+	} else if (text.startsWith("<<<", index)) {
+		lexer.word = `${lexer.word ?? ""}<<<`;
+		lexer.index = index + 3;
+	} else if (text.startsWith("<<", index)) {
+		heredocOperator(lexer);
+	} else {
+		plain(lexer, char);
+	}
+}
+
+/** A character with no quoting or substitution meaning. */
+function plain(lexer: Lexer, char: string): void {
+	const { text } = lexer;
+	const index = lexer.index - 1;
+	if (char === " " || char === "\t") {
+		endWord(lexer);
+	} else if (char === "\n") {
+		endSegment(lexer);
+		heredocBodies(lexer);
+	} else if (char === "&" ? !/[<>]/.test(text[index - 1] ?? "") && text[index + 1] !== ">" : ";|()".includes(char)) {
+		endSegment(lexer);
+	} else {
+		lexer.word = (lexer.word ?? "") + char;
+	}
+}
+
+/** A `"..."` string from its opening quote; `$(...)` and backticks inside it still run. */
+function doubleQuoted(lexer: Lexer): void {
+	const { text } = lexer;
+	let word = lexer.word ?? "";
+	let index = lexer.index;
+	while (index < text.length && text[index] !== '"') {
+		const found = substitutionAt(text, index);
+		if (text[index] === "\\") {
+			word += text[index + 1] ?? "";
+			index += 2;
+		} else if (found) {
+			lexer.inner.push(found.body);
+			word += "_";
+			index = found.end + 1;
+		} else {
+			word += text[index];
+			index++;
+		}
+	}
+	lexer.word = word;
+	lexer.index = index + 1;
+}
+
+/** `$(...)` or a backtick body starting at `index`; `end` is the index of its closing character. */
+function substitutionAt(text: string, index: number): { body: string; end: number } | undefined {
+	const tick = text[index] === "`";
+	if (!tick && !text.startsWith("$(", index)) {
+		return undefined;
+	}
+	const close = tick ? text.indexOf("`", index + 1) : closingParen(text, index + 2);
+	const end = close < 0 ? text.length : close;
+	return { body: text.slice(index + (tick ? 1 : 2), end), end };
 }
 
 function closingParen(line: string, from: number): number {
@@ -83,48 +186,62 @@ function closingParen(line: string, from: number): number {
 	return -1;
 }
 
-type Lexer = { result: string[][]; words: string[]; word: string | undefined; quote: string };
-
-/** Splits on unquoted `;`, `&&`, `||`, `|`, `&`, newlines and parentheses, and unquotes each word. */
-function segments(text: string): string[][] {
-	const lexer: Lexer = { result: [], words: [], word: undefined, quote: "" };
-	for (let index = 0; index < text.length; index++) {
-		index = lexer.quote ? quoted(lexer, text, index) : unquoted(lexer, text, index);
+/** `<<WORD`, `<<-WORD`, `<<'WORD'`: records the delimiter; the body starts after the next unquoted newline. */
+function heredocOperator(lexer: Lexer): void {
+	const { text } = lexer;
+	endWord(lexer);
+	let index = lexer.index + 1;
+	const strip = text[index] === "-";
+	index += strip ? 1 : 0;
+	while (text[index] === " " || text[index] === "\t") {
+		index++;
 	}
-	endSegment(lexer);
-	return lexer.result.filter((entry) => entry.length > 0);
+	let delimiter = "";
+	let expand = true;
+	for (; index < text.length && !/[\s;|&<>()]/.test(text[index] ?? ""); index++) {
+		const char = text[index] ?? "";
+		const end = char === "'" || char === '"' ? text.indexOf(char, index + 1) : index;
+		delimiter += char === "\\" ? "" : end === index ? char : text.slice(index + 1, end < 0 ? text.length : end);
+		expand &&= end === index && char !== "\\";
+		index = end < 0 ? text.length : end;
+	}
+	lexer.heredocs.push({ delimiter, strip, expand });
+	lexer.index = index;
 }
 
-/** One character inside quotes; returns the last index it consumed. */
-function quoted(lexer: Lexer, text: string, index: number): number {
-	const char = text[index] ?? "";
-	if (char === lexer.quote) {
-		lexer.quote = "";
-		return index;
+/** Skips the pending heredoc bodies; an unquoted delimiter still runs `$(...)` and backticks in its body. */
+function heredocBodies(lexer: Lexer): void {
+	const { text } = lexer;
+	for (const { delimiter, strip, expand } of lexer.heredocs) {
+		const body: string[] = [];
+		while (lexer.index < text.length) {
+			const newline = text.indexOf("\n", lexer.index);
+			const stop = newline < 0 ? text.length : newline;
+			const line = text.slice(lexer.index, stop);
+			lexer.index = stop + 1;
+			if ((strip ? line.replace(/^\t+/, "") : line) === delimiter) {
+				break;
+			}
+			body.push(line);
+		}
+		lexer.inner.push(...(expand ? bodySubstitutions(body.join("\n")) : []));
 	}
-	const escaped = lexer.quote === '"' && char === "\\";
-	lexer.word = (lexer.word ?? "") + (escaped ? (text[index + 1] ?? "") : char);
-	return escaped ? index + 1 : index;
+	lexer.heredocs = [];
 }
 
-/** One character outside quotes; returns the last index it consumed. */
-function unquoted(lexer: Lexer, text: string, index: number): number {
-	const char = text[index] ?? "";
-	if (char === "'" || char === '"') {
-		lexer.quote = char;
-		lexer.word ??= "";
-	} else if (char === "\\") {
-		const next = text[index + 1] ?? "";
-		lexer.word = next === "\n" ? lexer.word : (lexer.word ?? "") + next;
-		return index + 1;
-	} else if (char === " " || char === "\t") {
-		endWord(lexer);
-	} else if (char === "&" ? !/[<>]/.test(text[index - 1] ?? "") && text[index + 1] !== ">" : ";|\n()".includes(char)) {
-		endSegment(lexer);
-	} else {
-		lexer.word = (lexer.word ?? "") + char;
+/** `$(...)` and backtick bodies in heredoc text, where quotes are literal and `\` escapes. */
+function bodySubstitutions(body: string): string[] {
+	const inner: string[] = [];
+	for (let index = 0; index < body.length; index++) {
+		const found = body[index] === "\\" ? undefined : substitutionAt(body, index);
+		if (body[index] === "\\") {
+			index++;
+		} else if (found) {
+			inner.push(found.body);
+			index = found.end;
+		}
 	}
-	return index;
+	return inner;
 }
 
 function endWord(lexer: Lexer): void {
@@ -165,15 +282,23 @@ function classifyWords(raw: readonly string[], home: string): BashFinding[] {
 	return findings;
 }
 
-/** Drops `VAR=value`, and `env`, `command`, `sudo`, `exec`, `nohup`, `time` with their options. */
+/** Drops leading reserved words, `VAR=value`, and wrappers such as `env`, `timeout 120` or `xargs -n1`. */
 function withoutPrefixes(words: readonly string[]): readonly string[] {
-	let wrapped = false;
+	let current: Wrapper | undefined;
+	let operands = 0;
 	for (let index = 0; index < words.length; index++) {
 		const word = words[index] ?? "";
-		if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(word) || Object.hasOwn(WRAPPERS, basename(word))) {
-			wrapped ||= Object.hasOwn(WRAPPERS, basename(word));
-		} else if (wrapped && word.startsWith("-")) {
-			index += Object.hasOwn(WRAPPER_VALUES, word) ? 1 : 0;
+		const name = basename(word);
+		if (Object.hasOwn(RESERVED, word) || ASSIGNMENT.test(word)) {
+			continue;
+		}
+		if (Object.hasOwn(WRAPPERS, name)) {
+			current = WRAPPERS[name];
+			operands = current?.operands ?? 0;
+		} else if (current && word.startsWith("-")) {
+			index += Object.hasOwn(current.values, word) ? 1 : 0;
+		} else if (operands > 0) {
+			operands--;
 		} else {
 			return words.slice(index);
 		}
@@ -216,6 +341,12 @@ function ghAction(args: readonly string[]): Found | undefined {
 	}
 	if (group !== "api") {
 		return undefined;
+	}
+	const mutation = args.join(" ");
+	if (verb === "graphql" && /\bmutation\b/.test(mutation)) {
+		const merge = /\b(mergePullRequest|enablePullRequestAutoMerge)\b/.test(mutation);
+		const pr = /\bcreatePullRequest\b/.test(mutation);
+		return { action: "remote", permission: merge ? "canMerge" : pr ? "canOpenPr" : "canPush" };
 	}
 	const method = flagValue(args, "-X", "--method") ?? (args.some((arg) => hasFlag(arg, GH_BODY)) ? "POST" : "GET");
 	const target = `${verb}/${path}`;

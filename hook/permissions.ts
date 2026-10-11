@@ -22,8 +22,9 @@ const PROTECTED_ADVICE =
 const HASHLINE_HEADER = /^\s*(?:\[(.+)#[0-9A-Fa-f]{4}\]|¶+(.+?)(?:#[0-9A-Fa-f]{4})?|MV\s+(.+?))\s*$/;
 
 /**
- * The tool-call guard (design §4.5 B). Commits follow canCommit; direct remote actions, `limen approve`, a job's
- * `limen push|pr|merge` and writes to permission files are always blocked. It fails closed: an error blocks the call.
+ * The tool-call guard (design §4.5 B). Commits follow canCommit; direct remote actions (shell or OMP's `github`
+ * `pr_create`/`pr_push`), `limen approve`, a job's `limen push|pr|merge` and writes to permission files are always
+ * blocked. It fails closed: an error blocks the call.
  */
 export default function permissions(pi: PiApi): void {
 	pi.on("tool_call", (event, context) => {
@@ -42,6 +43,10 @@ function guard(event: ToolCall, cwd: string): Block | undefined {
 	if (event.toolName === "bash") {
 		const findings = typeof input.command === "string" ? classifyBash(input.command, home) : [];
 		return findings.length > 0 ? bashBlock(findings, cwd) : undefined;
+	}
+	if (event.toolName === "github" && (input.op === "pr_create" || input.op === "pr_push")) {
+		const permission = input.op === "pr_push" ? "canPush" : "canOpenPr";
+		return bashBlock([{ action: "remote", permission, command: `github ${input.op}` }], cwd);
 	}
 	if (event.toolName !== "write" && event.toolName !== "edit") {
 		return undefined;
