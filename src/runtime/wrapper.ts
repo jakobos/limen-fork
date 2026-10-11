@@ -116,6 +116,7 @@ export async function runInternalJob(): Promise<void> {
 		extensions: [
 			`${HOOK}/steering.ts`,
 			`${HOOK}/communication.ts`,
+			`${HOOK}/permissions.ts`,
 			...((await jobMembership(jobDir)) ? [`${HOOK}/group-peer.ts`] : []),
 			...(await readWorkerExtensions(jobDir, profile.id)),
 		],

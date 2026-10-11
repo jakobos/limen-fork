@@ -89,7 +89,7 @@ async function fixture(hosted = false) {
 		assert.ok(argv.includes("--no-extensions"));
 		const loaded = argv.flatMap((arg, index) => (arg === "--extension" ? [argv[index + 1]] : []));
 		assert.equal(new Set(loaded).size, loaded.length);
-		for (const hook of ["steering", "communication", "group-peer"]) {
+		for (const hook of ["steering", "communication", "permissions", "group-peer"]) {
 			assert.equal(loaded.filter((path) => path?.endsWith(`/hook/${hook}.ts`)).length, 1);
 		}
 		assert.equal(

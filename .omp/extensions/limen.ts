@@ -5,7 +5,7 @@ import { pathToFileURL } from "node:url";
 /** Project loader: installed package hooks, including opt-in informational group delivery. */
 export default async function limen(pi: unknown): Promise<void> {
 	const root = process.env.LIMEN_PACKAGE?.trim() || findPackage();
-	for (const name of ["wake", "communication", "steering", "group-peer"] as const) {
+	for (const name of ["wake", "communication", "steering", "permissions", "group-peer"] as const) {
 		const loaded = await import(pathToFileURL(join(root, "hook", `${name}.ts`)).href);
 		await loaded.default(pi);
 	}
