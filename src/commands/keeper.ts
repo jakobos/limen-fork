@@ -137,13 +137,13 @@ function parseKeeperArgs(args: readonly string[]): KeeperOptions {
 	if (jobs.length === 0 && !values.group) {
 		throw new Error("keeper requires --job ID or --group GROUP-ID");
 	}
+	// A missing model flag falls back to `.agents/limen/models.json` for the keeper role in spawn.
 	const route: string[] = [];
 	for (const name of ROUTE) {
 		const value = values[name];
-		if (!value) {
-			throw new Error(`keeper requires --engine --provider --model --thinking; missing --${name}`);
+		if (value) {
+			route.push(`--${name}`, value);
 		}
-		route.push(`--${name}`, value);
 	}
 	return {
 		change,

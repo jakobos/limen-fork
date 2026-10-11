@@ -247,7 +247,7 @@ type JobEvidence = {
 	readonly cleanup: string;
 	readonly finishWebhook: string;
 	readonly herdrWake: string;
-	/** Detail only: the served model (and the requested one when they differ) and the session token totals. */
+	/** Detail only: the served model (and the requested one when they differ), each field's source, and token totals. */
 	readonly model: string;
 	readonly tokens: string;
 };
@@ -363,7 +363,9 @@ async function readJobEvidence(
 	const finishWebhook = detailed && fields.state !== "running" ? await inspectFinishWebhook(jobDir) : "";
 	const herdrWake = detailed ? await text(`${jobDir}/notify/herdr-prompt`) : "";
 	const usage = detailed ? readSessionUsage(jobDir, Date.parse(fields.started) || 0) : undefined;
-	const model = detailed ? modelLine(await text(`${jobDir}/model`), usage) : "";
+	// The recorded source of each model field (`model-source`) rides beside the requested and served model.
+	const sources = detailed ? (await text(`${jobDir}/model-source`)).split("\n").filter(Boolean).join(", ") : "";
+	const model = [detailed ? modelLine(await text(`${jobDir}/model`), usage) : "", sources].filter(Boolean).join(" · ");
 	const tokens = usage ? tokenLine(usage) : "";
 	return {
 		evidence: {

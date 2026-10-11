@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { callerRole, effectivePermissions, renderPermissions } from "../src/project/autonomy.ts";
 import { loadBoard, renderBoard } from "../src/project/changes.ts";
 import { formatDrift, inheritFile, listDrift, readOptional } from "../src/project/inherit.ts";
 import {
@@ -115,7 +116,19 @@ async function guidancePrompt(cwd: string, job: boolean): Promise<string> {
 		parts.push(boundFile(cwd, WORKING_RULES_FILE, "Working rules"));
 		parts.push(boundText(renderBoard(await loadBoard(cwd)), "limen board", "Board"));
 	}
+	parts.push(permissionsBlock(cwd));
 	return parts.filter(Boolean).join("\n\n");
+}
+
+/** Read fresh on every turn, so an edit to either autonomy file applies to the next turn. Never throws. */
+function permissionsBlock(root: string): string {
+	try {
+		const caller = callerRole(process.env, root);
+		return renderPermissions(effectivePermissions(root, caller.role, caller.interactiveCoordinator));
+	} catch (error) {
+		const reason = error instanceof Error ? error.message : String(error);
+		return `Permissions for this repo could not be computed (${reason}); treat push, PRs, and merges as denied.`;
+	}
 }
 
 /** Every global standard in name order, as one text; the caller bounds the total. */

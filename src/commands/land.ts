@@ -2,6 +2,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { createInterface } from "node:readline/promises";
 import { resolveJob } from "../job/lookup.ts";
+import { callerRole, effectivePermissions } from "../project/autonomy.ts";
 import {
 	abortMerge,
 	commitList,
@@ -23,6 +24,13 @@ export async function landCommand(args: readonly string[], cwd: string): Promise
 	const { id, branch, base, repo, label } = await readDoneJob(cwd, parsed.query);
 	const root = limenRoot(cwd);
 	const repository = repo ? workspaceRepository(root, repo) : root;
+	const caller = callerRole(process.env, root);
+	const commit = effectivePermissions(repository, caller.role, caller.interactiveCoordinator).values.canCommit;
+	if (commit.level !== "allow") {
+		throw new Error(
+			`land refused: canCommit is ${commit.level} for role ${caller.role} (${commit.source}); see limen permissions`,
+		);
+	}
 	const target = landTarget(repository, parsed.onto, branch);
 	const dirty = checkCheckoutBeside(repository, target, { id, branch, base });
 	await checkLandGates(repository, root, branch, id);

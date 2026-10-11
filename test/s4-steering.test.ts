@@ -126,6 +126,7 @@ test("a worker prompt carries register and standards once, change and vision poi
 	assert.ok(context.includes("`context/foundation/vision.md`"), "vision pointer");
 	assert.equal(count(system + context, VISION), 0, "a worker reads the vision itself");
 	assert.equal(count(system + context, BOARD), 0, "a worker never gets the board body");
+	assert.ok(system.includes("- canPush: deny (role ceiling)"), "the permissions block, with the worker ceiling");
 	assert.equal(count(argv(parent).join(" "), "hook/steering.ts"), 1);
 	assert.equal(count(argv(parent).join(" "), "hook/communication.ts"), 1);
 });

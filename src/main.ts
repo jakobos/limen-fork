@@ -1,3 +1,4 @@
+import { permissionsCommand } from "./commands/autonomy-report.ts";
 import { boardCommand } from "./commands/board.ts";
 import { changeAuthorCommand } from "./commands/change-author.ts";
 import { changeCommand } from "./commands/change-check.ts";
@@ -57,6 +58,7 @@ const COMMANDS = {
 	change: changeCommand,
 	"change-author": changeAuthorCommand,
 	webhook: webhookCommand,
+	permissions: permissionsCommand,
 } as const satisfies Record<
 	| "init"
 	| "workspace"
@@ -85,7 +87,8 @@ const COMMANDS = {
 	| "drop"
 	| "change"
 	| "change-author"
-	| "webhook",
+	| "webhook"
+	| "permissions",
 	Command
 >;
 const HELP = `limen — isolated coding jobs with files and git
@@ -125,6 +128,7 @@ usage:
   limen drop <change-id> "reason"                # status dropped, reason in ## Notes, git mv to context/archive/<today>-<id>/; no commit
   limen change check [BRANCH]                    # land gate on demand: change folders BRANCH adds or changes; run before a hand git merge
   limen change-author <change-folder>            # creation-commit author of change.md or effort.md, following Git renames
+  limen permissions [--repo R] [--role X] [--check-remote]  # effective canCommit/canPush/canOpenPr/canMerge and the layer that set each; --check-remote compares GitHub rulesets (read-only)
   limen sweep [--install|--uninstall]
   limen webhook test                             # send one test ping to this plant's finish webhook targets
   limen linear [on [--team T --project P]|off|status]   # Linear mirror toggle — renames .agents/limen/linear.md ↔ .off; --team/--project write a fresh config

@@ -20,8 +20,9 @@ import {
 import { acceptBatch, acceptTransport, groupEvents, publishEvent, syncLifecycle } from "../job/group-events.ts";
 import { parseDuration, SESSION_ID } from "../job/job.ts";
 import { cleanWorktree, commitHasFile, headCommit, repoRoot } from "../project/git.ts";
+import { resolveModels } from "../project/models.ts";
 import { type PlanningSource, planningSource, privatePlanningFile } from "../project/planning.ts";
-import { type EngineProfile, preflightEngine, resolveSpawnEngine } from "../runtime/engine.ts";
+import { type EngineProfile, engineProfile, preflightEngine } from "../runtime/engine.ts";
 import { normalizeWorkerExtensions } from "../runtime/worker-extensions.ts";
 import { parseFlags } from "./flags.ts";
 import { spawnCommand } from "./spawn.ts";
@@ -180,7 +181,7 @@ export async function startGroup(args: readonly string[], cwd: string): Promise<
 	const feature = groupFeature(root, cwd, featureArgument);
 	const source = await groupPlanningSource(root, feature, featureArgument, options.newRun);
 	const lead = await liveGroupLead(root);
-	const settings = groupSettings(options);
+	const settings = groupSettings(root, options);
 	await checkGroupPacket(root, feature, settings.teams, source);
 	const activated = await activateGroup(root, cwd, { feature, source, lead, settings, options });
 	if (activated.created) {
@@ -247,7 +248,7 @@ function groupCount(flags: ReadonlyMap<string, string>, key: string): number {
 	return Number(value);
 }
 /** The roster, deadlines, engine route and reasoning levels, checked in the order a missing setting is reported. */
-function groupSettings({ flags, teamModels, mode }: GroupStartOptions): GroupSettings {
+function groupSettings(root: string, { flags, teamModels, mode }: GroupStartOptions): GroupSettings {
 	const teams = Array.from({ length: groupCount(flags, "--teams") }, (_, index) => `team-${index + 1}`);
 	for (const team of Object.keys(teamModels)) {
 		if (!teams.includes(team)) {
@@ -259,11 +260,16 @@ function groupSettings({ flags, teamModels, mode }: GroupStartOptions): GroupSet
 	const workersPerTeam = groupCount(flags, "--workers-per-team");
 	const timeout = parseDuration(groupSetting(flags, "--timeout"));
 	const workerTimeoutMs = parseDuration(groupSetting(flags, "--worker-timeout"));
-	const profile = resolveSpawnEngine(groupSetting(flags, "--engine"));
-	const provider = groupSetting(flags, "--provider");
-	const model = groupSetting(flags, "--model");
-	const thinking = groupSetting(flags, "--thinking");
-	const workerThinking = groupSetting(flags, "--worker-thinking");
+	// Leads and team coordinators take the coordinator role's models.json entry; workers take the worker role's reasoning.
+	const lead = resolveModels(root, "coordinator", {
+		engine: flags.get("--engine"),
+		provider: flags.get("--provider"),
+		model: flags.get("--model"),
+		thinking: flags.get("--thinking"),
+	});
+	const profile = engineProfile(lead.values.engine);
+	const { provider, model, thinking } = lead.values;
+	const workerThinking = resolveModels(root, "worker", { thinking: flags.get("--worker-thinking") }).values.thinking;
 	for (const level of [thinking, workerThinking]) {
 		if (!["off", "minimal", "low", "medium", "high", "xhigh"].includes(level)) {
 			throw new Error(

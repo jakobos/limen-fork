@@ -62,6 +62,8 @@ export async function plant(): Promise<Plant> {
 	await Promise.all([mkdir(bin), mkdir(join(parent, "home"))]);
 	await Promise.all(["pi", "omp"].map((name) => symlink(FAKE_ENGINE, join(bin, name))));
 	await writeFile(join(parent, "sink.mjs"), sinkSource(parent));
+	const ship = { canCommit: "allow", canPush: "allow", canOpenPr: "allow", canMerge: "allow" };
+	await writeFile(join(parent, "autonomy.json"), JSON.stringify({ profiles: { ship }, repos: [], default: "ship" }));
 	const env = {
 		PATH: `${bin}:${dirname(process.execPath)}:/usr/bin:/bin:/usr/sbin:/sbin`,
 		HOME: join(parent, "home"),
@@ -73,6 +75,7 @@ export async function plant(): Promise<Plant> {
 		GIT_CONFIG_NOSYSTEM: "1",
 		NODE_NO_WARNINGS: "1",
 		NODE_OPTIONS: `--import=${join(parent, "sink.mjs")}`,
+		LIMEN_AUTONOMY_FILE: join(parent, "autonomy.json"),
 	};
 	const made: Plant = {
 		parent,

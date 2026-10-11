@@ -96,30 +96,31 @@ The next launch finds new or changed old skills, so the plant needs no links tha
 
 Use this reference when you need to set model choices or run commands yourself.
 
-Project choices are in two files. `.agents/limen/models.json` records the engine, provider, model, and reasoning level for each role. `.agents/limen/working-rules.md` records who reviews and the quota policy. The coordinator reads those choices and passes them to the CLI as command flags. The CLI selects settings from flags, environment variables, and package defaults. A newer explicit instruction from the owner has priority over the files. Replace the placeholders in the commands with the project choices.
+Project choices are in two files. `.agents/limen/models.json` records the engine, provider, model, and reasoning level for each role. `.agents/limen/working-rules.md` records who reviews and the quota policy. Spawn reads `.agents/limen/models.json`; a flag overrides it for one job. A newer explicit instruction from the owner has priority over the files.
 
-### Package fallbacks
+### How spawn picks a model
 
-The coordinator must pass the project choices explicitly. Package fallbacks apply when command flags and environment variables do not select a setting.
+The file has a `default` entry and a `roles` map. A role entry may set only some fields:
 
-**Engine.** `--engine pi|omp` selects the job binary. The order of priority is:
+```json
+{
+  "default": { "engine": "omp", "provider": "openai-codex", "model": "gpt-6.1-sol", "thinking": "high" },
+  "roles": { "reviewer": { "thinking": "xhigh" }, "scout": { "provider": "pi-claude", "model": "claude-haiku-5-5" } }
+}
+```
 
-1. `--engine pi|omp`
-2. `LIMEN_ENGINE` (for example, `LIMEN_ENGINE=pi` selects Pi)
-3. OMP, for new jobs, when neither is set
+The role is the `--role` value, `reviewer` for `--review`, and `worker` otherwise. For each of `engine`, `provider`, `model`, and `thinking`, the first source that sets the field wins:
 
-Two exceptions apply:
+1. the command flag (`--engine`, `--provider`, `--model`, `--thinking`)
+2. the project role, then the project default, in `.agents/limen/models.json`
+3. the personal role, then the personal default, in `~/.config/limen/models.json` (`LIMEN_MODELS_FILE` names another path)
+4. the package role, then the package default, in the package's `templates/models.json`
 
-- Old job records without an engine stay on Pi, for compatibility.
-- A continuation keeps the engine of its parent. `limen continue` refuses a different `--engine`, so to continue a Pi transcript, you still need Pi.
+The package file sets every field, so spawn never refuses for a missing model. A file with invalid JSON or an unknown field refuses the spawn and names the file. The job records each value and its source in `.limen/jobs/<id>/model-source`, and `limen jobs <id>` prints them beside the requested model.
 
-**Model.** The order of priority is:
+`limen keeper`, `limen group start`, and `limen github review|work` resolve the same way. A group reads the `coordinator` role for its engine, provider, model, and `--thinking`, and the `worker` role for `--worker-thinking`. A continuation keeps the engine of its parent (source `parent job`); `limen continue` refuses a different `--engine`, so to continue a Pi transcript, you still need Pi. Old job records without an engine stay on Pi.
 
-1. `--model`
-2. `LIMEN_WORKER_MODEL` (or `LIMEN_REVIEWER_MODEL` for `--review`)
-3. the built-in `openai-codex/gpt-6-astra:high`
-
-**`pi-claude` on OMP.** On OMP, `--model pi-claude/<model>` (without `--provider`) loads the local bridge at `~/.omp/local/pi-claude-bridge` explicitly. This is necessary because jobs otherwise start with `--no-extensions`. `--provider pi-claude` is not an OMP provider.
+**`pi-claude` on OMP.** On OMP, provider `pi-claude` (or `--model pi-claude/<model>`) loads the local bridge at `~/.omp/local/pi-claude-bridge` explicitly and passes the model as `pi-claude/<model>`. This is necessary because jobs otherwise start with `--no-extensions`. `--provider pi-claude` is not an OMP provider, so it never reaches OMP's argv.
 
 **Auth.** Pi and OMP keep separate auth stores (`~/.pi` and `~/.omp`). Authenticate each engine you use. Limen does not change the settings or credentials of either engine. One wrapper and one stream parser serve both engines.
 
@@ -130,8 +131,7 @@ An owner can describe an approved model route in their active personal coordinat
 For a Pi worker, pass each selected path explicitly:
 
 ```text
-limen spawn --engine pi --provider <provider> --model <model> --thinking <level> \
-  --extension /path/to/trusted-entry.ts --label "what this changes" "instruction"
+limen spawn --engine pi --extension /path/to/trusted-entry.ts --label "what this changes" "instruction"
 ```
 
 `--extension` accepts local files and package directories in both hosted and detached modes. Limen does not install or import them; Pi loads them. A directory can expose several extensions and other package resources, so prefer the exact entry file when that is the intended selection. Ambient extensions stay disabled. See [command details](commands.md#start-and-continue-jobs) for path rules and continuation replacement.
@@ -147,20 +147,18 @@ herdr agent start limen-peer --kind <engine> --pane <pane-id> -- \
   --provider <provider> --model <model> --thinking <level>
 ```
 
-Herdr sends on the arguments after `--`, but Herdr does not select the model for Limen. Do not depend on old Pi project settings or a global default model.
+Herdr sends on the arguments after `--`, but Herdr does not select the model for Limen. Use the `coordinator` entry in `.agents/limen/models.json`. Do not depend on old Pi project settings or a global default model.
 
 ### Start a worker
 
 For an ordinary worker:
 
 ```bash
-limen spawn --engine <engine> \
-  --provider <provider> --model <model> --thinking <level> \
-  --label "what this changes · <change-id>" \
+limen spawn --label "what this changes · <change-id>" \
   'Implement <change-id>: run /dx-implement --manual until ## Progress is done. Change: context/changes/<change-id>/'
 ```
 
-In Herdr, this job is hosted. Use `--detached` when someone asks for a background worker. In both modes, `--provider`, `--model`, and `--thinking` go to the selected engine as separate flag and value pairs. `limen continue` accepts the same flags.
+In Herdr, this job is hosted. Use `--detached` when someone asks for a background worker. In both modes, the resolved provider, model, and reasoning go to the selected engine as separate flag and value pairs. `limen continue` accepts the same flags.
 
 ## Adjacent-repository workspaces
 
