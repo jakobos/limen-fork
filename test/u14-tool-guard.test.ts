@@ -28,15 +28,30 @@ test("the classifier finds actions through prefixes, git options, substitutions 
 		"cat <<EOF\n$(git push)\nEOF",
 		`echo "it's done"; echo "$(git push)"`,
 		"gh api graphql -f query='mutation { mergePullRequest }'",
+		`echo "$(printf '(')" && git push`,
+		"git push>/dev/null",
+		"git push&>log",
+		"git push>log 2>&1",
+		"2>/dev/null git push",
+		"gh pr create>/dev/null -t x -b y",
+		"(( y = 1 << 2 ))\ngit push",
+		"function f { git push; }; f",
 	];
 	assert.deepEqual(hidden.map(actions), Array(hidden.length).fill("remote"));
+	const substitutions = [
+		`git commit -m "$(cat <<'EOF'\nFix :( sad path\nEOF\n)" && git push`,
+		`msg=$(cat <<'EOF'\nFix: 1) don't push\nEOF\n)\ngit commit -m "$msg" && git push`,
+		"msg=$(cat <<'EOF'\nSteps: 1) build\ngit push is now blocked\nEOF\n)",
+	];
+	assert.deepEqual(substitutions.map(actions), ["commit,remote", "commit,remote", ""]);
 	const heredocs = [
 		"git commit -F - <<'EOF'\nGuard\n\ngit push now returns the block reason.\nEOF",
 		"cat > notes.md <<'EOF'\nRun: make && git push\nEOF",
 	];
 	assert.deepEqual(heredocs.map(actions), ["commit", ""]);
 	const others = ["git -c a=b commit -m x", "limen approve j push", "rm ~/.config/limen/autonomy.json"];
-	assert.deepEqual(others.map(actions), ["commit", "approve", "protected-path"]);
+	const writes = ["cat x >~/.config/limen/a", "cat x > ~/.config/limen/a"];
+	assert.deepEqual([...others, ...writes].map(actions), ["commit", "approve", ...Array(3).fill("protected-path")]);
 });
 
 test("the hook follows canCommit, fails closed on a broken file, and guards permission files", () => {

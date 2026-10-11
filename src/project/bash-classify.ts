@@ -25,6 +25,7 @@ const WRAPPERS: Record<string, Wrapper> = {
 	nice: wrapper("-n --adjustment"),
 	stdbuf: wrapper("-i -o -e --input --output --error"),
 	xargs: wrapper("-a --arg-file -d --delimiter -E -I -L -n --max-args -P --max-procs -s --max-chars"),
+	function: wrapper("", 1),
 };
 const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
 const GIT_VALUES = set("-C -c --git-dir --work-tree --namespace --config-env");
@@ -52,6 +53,11 @@ const PROTECTED = [
 	/\.(omp|pi)\/extensions\/limen\.ts\b/,
 ];
 const REDIRECT = /^(\d*|&)>/;
+/** A redirection word such as `>log`, `2>&1` or `<&-`; `ALONE` is one whose target is the next word. */
+const REDIRECT_WORD = /^(\d+|&)?[<>]/;
+const REDIRECT_ALONE = /^(\d+|&)?[<>]+[&|]?$/;
+/** A word that may still grow into a redirection operator: `2`, `&`, `2>`, `>`. */
+const OPERATOR_START = /^[\d&<>]*$/;
 const READ_METHOD = /^(GET|HEAD)$/i;
 
 /**
@@ -76,14 +82,21 @@ type Lexer = {
 	word: string | undefined;
 	inner: string[];
 	heredocs: Heredoc[];
+	/** Unquoted `(` minus `)` so far; `arithmetic` is the depth of an open `((`, or 0. */
+	depth: number;
+	arithmetic: number;
 };
+
+function lexerAt(text: string, index: number): Lexer {
+	return { text, index, result: [], words: [], word: undefined, inner: [], heredocs: [], depth: 0, arithmetic: 0 };
+}
 
 /**
  * One pass over a command line: splits on unquoted `;`, `&&`, `||`, `|`, `&`, newlines and parentheses, unquotes
  * each word, drops `#` comments, skips heredoc bodies, and collects `$(...)` and backtick bodies in `inner`.
  */
 function tokenize(text: string): Lexer {
-	const lexer: Lexer = { text, index: 0, result: [], words: [], word: undefined, inner: [], heredocs: [] };
+	const lexer = lexerAt(text, 0);
 	while (lexer.index < text.length) {
 		step(lexer);
 	}
@@ -116,9 +129,9 @@ function step(lexer: Lexer): void {
 		const end = text.indexOf("\n", index);
 		lexer.index = end < 0 ? text.length : end;
 	} else if (text.startsWith("<<<", index)) {
-		lexer.word = `${lexer.word ?? ""}<<<`;
+		operator(lexer, "<<<");
 		lexer.index = index + 3;
-	} else if (text.startsWith("<<", index)) {
+	} else if (text.startsWith("<<", index) && lexer.arithmetic === 0) {
 		heredocOperator(lexer);
 	} else {
 		plain(lexer, char);
@@ -134,10 +147,33 @@ function plain(lexer: Lexer, char: string): void {
 	} else if (char === "\n") {
 		endSegment(lexer);
 		heredocBodies(lexer);
-	} else if (char === "&" ? !/[<>]/.test(text[index - 1] ?? "") && text[index + 1] !== ">" : ";|()".includes(char)) {
+	} else if (char === "(" || char === ")") {
+		parenthesis(lexer, char);
+	} else if (char === "&" ? !/[<>]/.test(text[index - 1] ?? "") && text[index + 1] !== ">" : ";|".includes(char)) {
 		endSegment(lexer);
+	} else if ("<>&".includes(char)) {
+		operator(lexer, char);
 	} else {
 		lexer.word = (lexer.word ?? "") + char;
+	}
+}
+
+/** A redirection operator ends the word before it unless that word is its fd: `push>log` but `2>&1`. */
+function operator(lexer: Lexer, text: string): void {
+	if (!OPERATOR_START.test(lexer.word ?? "")) {
+		endWord(lexer);
+	}
+	lexer.word = (lexer.word ?? "") + text;
+}
+
+function parenthesis(lexer: Lexer, char: string): void {
+	endSegment(lexer);
+	if (char === "(") {
+		lexer.depth++;
+		lexer.arithmetic ||= lexer.text[lexer.index] === "(" ? lexer.depth : 0;
+	} else {
+		lexer.depth--;
+		lexer.arithmetic = lexer.depth < lexer.arithmetic ? 0 : lexer.arithmetic;
 	}
 }
 
@@ -170,20 +206,18 @@ function substitutionAt(text: string, index: number): { body: string; end: numbe
 	if (!tick && !text.startsWith("$(", index)) {
 		return undefined;
 	}
-	const close = tick ? text.indexOf("`", index + 1) : closingParen(text, index + 2);
+	const close = tick ? text.indexOf("`", index + 1) : closingParen(text, index + 1);
 	const end = close < 0 ? text.length : close;
 	return { body: text.slice(index + (tick ? 1 : 2), end), end };
 }
 
-function closingParen(line: string, from: number): number {
-	let depth = 1;
-	for (let index = from; index < line.length; index++) {
-		depth += line[index] === "(" ? 1 : line[index] === ")" ? -1 : 0;
-		if (depth === 0) {
-			return index;
-		}
-	}
-	return -1;
+/** The `)` that closes the `(` at `from`, found by the lexer so quotes, comments and heredoc bodies do not count. */
+function closingParen(text: string, from: number): number {
+	const lexer = lexerAt(text, from);
+	do {
+		step(lexer);
+	} while (lexer.depth > 0 && lexer.index < text.length);
+	return lexer.depth === 0 ? lexer.index - 1 : -1;
 }
 
 /** `<<WORD`, `<<-WORD`, `<<'WORD'`: records the delimiter; the body starts after the next unquoted newline. */
@@ -258,7 +292,7 @@ function endSegment(lexer: Lexer): void {
 }
 
 function classifyWords(raw: readonly string[], home: string): BashFinding[] {
-	const words = withoutPrefixes(raw);
+	const words = withoutPrefixes(withoutRedirects(raw));
 	const [head = "", ...args] = words;
 	const name = basename(head);
 	const command = raw.join(" ");
@@ -271,15 +305,29 @@ function classifyWords(raw: readonly string[], home: string): BashFinding[] {
 	const findings: BashFinding[] = found ? [{ ...found, command }] : [];
 	const readOnly =
 		Object.hasOwn(READ_ONLY, name) || (name === "limen" && positionals(args, NO_VALUES)[0] === "permissions");
-	const touches = words.some(
+	const touches = raw.some(
 		(word, index) =>
 			(PROTECTED.some((pattern) => pattern.test(word)) || word.includes(`${home}/.config/limen`)) &&
-			(!readOnly || REDIRECT.test(word) || REDIRECT.test(words[index - 1] ?? "")),
+			(!readOnly || REDIRECT.test(word) || REDIRECT.test(raw[index - 1] ?? "")),
 	);
 	if (touches) {
 		findings.push({ action: "protected-path", command });
 	}
 	return findings;
+}
+
+/** Drops redirections: `>log`, `2>&1`, and `>` with its target word. */
+function withoutRedirects(words: readonly string[]): string[] {
+	const kept: string[] = [];
+	for (let index = 0; index < words.length; index++) {
+		const word = words[index] ?? "";
+		if (REDIRECT_ALONE.test(word)) {
+			index++;
+		} else if (!REDIRECT_WORD.test(word)) {
+			kept.push(word);
+		}
+	}
+	return kept;
 }
 
 /** Drops leading reserved words, `VAR=value`, and wrappers such as `env`, `timeout 120` or `xargs -n1`. */
