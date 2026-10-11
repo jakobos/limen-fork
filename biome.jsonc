@@ -15,8 +15,8 @@
 	// out, or a preset warning raised to an error. A rule turned off names its reason and only the files it is true for.
 	"linter": {
 		"enabled": true,
-		// Feature folders keep human evidence, such as saved HTML pages. Lint only the code that ships.
-		"includes": ["**", "!spec/**"],
+		// Change folders keep human evidence, such as saved HTML pages. Lint only the code that ships.
+		"includes": ["**", "!context/**"],
 		"rules": {
 			// The recommended rules catch real mistakes (non-null assertions, unsafe `finally`, control characters in a regex)
 			// that no named rule here covers. `npm run check` runs with `--error-on-warnings`, so a preset warning fails it too.
@@ -103,6 +103,7 @@
 		}
 	},
 	"files": {
-		"includes": ["**", "!!node_modules", "!!package-lock.json"]
+		// The skills CLI writes skills-lock.json and .agents/skills/; dx owns their bytes.
+		"includes": ["**", "!!node_modules", "!!package-lock.json", "!!skills-lock.json", "!!.agents/skills"]
 	}
 }

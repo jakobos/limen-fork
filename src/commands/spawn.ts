@@ -1,7 +1,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
-import { basename, dirname, resolve } from "node:path";
+import { basename, dirname, isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { captureFinishAuthor, finishWebhookEnv } from "../integrations/finish-webhook.ts";
 import { herdrAvailable, herdrBinary, openHostedTab, openWatchTab } from "../integrations/herdr.ts";
@@ -25,23 +25,17 @@ import {
 	workspaceRoot,
 	worktreeForBranch,
 } from "../project/git.ts";
+import { type ModelChoice, modelSourceText, requestedModel, resolveModels } from "../project/models.ts";
 import {
+	changePointers,
 	inheritedPlanning,
 	type PlanningSource,
 	planningSource,
 	privatePlanningFile,
 	privatePlanningTask,
-	ticketPointers,
 } from "../project/planning.ts";
 import { signalProcessGroup, waitForProcessGroup } from "../runtime/contain.ts";
-import {
-	defaultModel,
-	type EngineId,
-	type EngineProfile,
-	engineBinary,
-	preflightEngine,
-	resolveSpawnEngine,
-} from "../runtime/engine.ts";
+import { type EngineId, type EngineProfile, engineBinary, engineProfile, preflightEngine } from "../runtime/engine.ts";
 import { liveJob } from "../runtime/reap.ts";
 import { normalizeWorkerExtensions } from "../runtime/worker-extensions.ts";
 import { launchHostedSupervisor, launchWrapper } from "../runtime/wrapper.ts";
@@ -128,7 +122,7 @@ type SpawnLaunch = {
 	readonly group: SpawnGroup | undefined;
 	readonly hosted: boolean;
 	readonly profile: EngineProfile;
-	readonly model: string | undefined;
+	readonly route: ModelChoice;
 	readonly extensions: readonly string[];
 	readonly notificationSession: string | undefined;
 	readonly coordinatorTab: string | undefined;
@@ -168,15 +162,15 @@ async function spawnJob(args: readonly string[], cwd: string, group?: SpawnGroup
 		task: loaded.text,
 		label: parsed.label ?? (loaded.text.trim().split(/\r?\n/, 1)[0]?.trim().slice(0, 80) || "job"),
 	};
-	const profile = resolveSpawnEngine(options.engine);
-	const model = options.model ?? defaultModel(options.review);
+	const place = resolveSpawnPlace(cwd, group, options.repo);
+	const route = resolveModels(place.root, spawnRole(options, group), options);
+	const profile = engineProfile(route.values.engine);
 	const extensions = await launchExtensions(group, options.extensions, cwd, profile.id);
-	preflightEngine(profile, model, options.provider);
+	preflightEngine(profile, route.values.model, route.values.provider);
 	const notificationSession = currentNotificationSession();
 	const coordinatorTab = process.env.HERDR_TAB_ID?.trim();
 	// A group member never subscribes a session, so its pane stays recorded even under Pi: it is the lead's route when the group hook is not running.
 	const coordinatorPane = herdrWakePane(group ? undefined : notificationSession);
-	const place = resolveSpawnPlace(cwd, group, options.repo);
 	const { task, privatePacket } = await spawnTaskText(loaded, options.repo, place, group);
 	await recordSpawnedJob({
 		cwd,
@@ -185,7 +179,7 @@ async function spawnJob(args: readonly string[], cwd: string, group?: SpawnGroup
 		group,
 		hosted,
 		profile,
-		model,
+		route,
 		extensions,
 		notificationSession,
 		coordinatorTab,
@@ -194,6 +188,10 @@ async function spawnJob(args: readonly string[], cwd: string, group?: SpawnGroup
 		task,
 		privatePacket,
 	});
+}
+/** The role whose preamble and models.json entry the job takes. */
+function spawnRole(options: SpawnOptions, group: SpawnGroup | undefined): string {
+	return options.review ? "reviewer" : (group?.role ?? options.role ?? "worker");
 }
 /** Outside a group no job may claim the owner-facing lead; a group launch keeps its recorded route and branches. */
 async function checkLaunchAuthority(parsed: SpawnOptions, group: SpawnGroup | undefined): Promise<void> {
@@ -298,7 +296,7 @@ async function spawnTaskText(
 	const { root, source } = place;
 	let task = loaded.text;
 	if (!loaded.raw && place.workspace) {
-		task = workspaceTask(loaded.text, root, repoFlag ?? "");
+		task = workspaceTask(loaded.text, repoFlag ?? "");
 	}
 	// Private planning: check every pointer now, before a job record or worktree exists.
 	let privatePacket = "";
@@ -306,10 +304,10 @@ async function spawnTaskText(
 		task = await privatePlanningTask(root, task);
 		if (group) {
 			const feature = group.run.feature;
-			const ticket = await privatePlanningFile(root, `${feature}/ticket.md`);
+			const change = await privatePlanningTask(root, `Change: ${feature}/`);
 			const brief = await privatePlanningFile(root, `${feature}/group/brief.md`);
 			const note = await privatePlanningFile(root, `${feature}/group/teams/${group.team}.md`);
-			privatePacket = `Ticket: ${ticket}\nBrief: ${brief}\nApproach note: ${note}`;
+			privatePacket = `${change}\nBrief: ${brief}\nApproach note: ${note}`;
 		}
 	}
 	return { task, privatePacket };
@@ -318,7 +316,7 @@ async function spawnTaskText(
 async function recordSpawnedJob(launch: SpawnLaunch): Promise<void> {
 	const { options, group, place, task } = launch;
 	const { root, repository, source } = place;
-	const role = options.review ? "reviewer" : (group?.role ?? options.role ?? "worker");
+	const role = spawnRole(options, group);
 	const pinnedBase = options.base ? resolveCommit(repository, options.base, "--base") : undefined;
 	const pinnedHead = options.head ? resolveCommit(repository, options.head, "--head") : undefined;
 	const preamble = resolvePreamble(root, role);
@@ -343,7 +341,7 @@ async function recordSpawnedJob(launch: SpawnLaunch): Promise<void> {
 	}
 	const baseCommit = plan.kind === "add-new" ? spawnBaseCommit(repository) : branchCommit(repository, branch);
 	if (source === "committed") {
-		assertTicketsAtBase(repository, baseCommit, task);
+		assertChangesAtBase(repository, baseCommit, task);
 	}
 	const member = group ? await claimMember(group.run, group.team, group.role, id) : undefined;
 	await noteRunningJobs(jobsRoot, options.label);
@@ -355,14 +353,15 @@ async function recordSpawnedJob(launch: SpawnLaunch): Promise<void> {
 	const worktree = await createJobWorktree(launch, jobDir, plan);
 	await launchSpawnedJob(launch, { jobDir, id, root, worktree, preamble, role, memberDeadline: member?.deadline });
 }
-function assertTicketsAtBase(repository: string, baseCommit: string, task: string): void {
-	for (const { path } of ticketPointers(task)) {
-		if (path.startsWith("spec/") && !commitHasFile(repository, baseCommit, path)) {
-			throw new Error(`ticket ${path} is missing from the base commit`);
+/** Each relative `Change:` folder holds its change.md or effort.md in the commit the worktree starts from. */
+function assertChangesAtBase(repository: string, baseCommit: string, task: string): void {
+	for (const { path, kind } of changePointers(task)) {
+		if (!isAbsolute(path) && !commitHasFile(repository, baseCommit, `${path}${kind}.md`)) {
+			throw new Error(`change ${path}${kind}.md is missing from the base commit; commit it before spawning`);
 		}
 	}
 }
-/** Says how many jobs already run, and warns about a bare feature-number label or a label a live job holds. */
+/** Says how many jobs already run, and warns about a label a live job holds. */
 async function noteRunningJobs(jobsRoot: string, label: string): Promise<void> {
 	let running = 0;
 	let held = false;
@@ -378,9 +377,6 @@ async function noteRunningJobs(jobsRoot: string, label: string): Promise<void> {
 	if (running > 0) {
 		console.log(`note: ${running} job${running === 1 ? "" : "s"} already running; starting another`);
 	}
-	if (/^F\d{3,}$/i.test(label)) {
-		console.log("warning: label is only a feature number");
-	}
 	if (held) {
 		console.log("warning: a live job already holds this label");
 	}
@@ -391,7 +387,7 @@ async function jobTaskBody(
 	member: GroupMember | undefined,
 ): Promise<string | Uint8Array> {
 	const { task, loaded, group, place } = launch;
-	// Private planning may rewrite ticket pointers, so its task is the checked text, not the raw bytes.
+	// Private planning may rewrite change pointers, so its task is the checked text, not the raw bytes.
 	let taskBody: string | Uint8Array = `${task.trim()}\n`;
 	if (loaded.raw && place.source === "committed") {
 		taskBody = loaded.bytes;
@@ -419,12 +415,13 @@ async function publishSpawnedJob(launch: SpawnLaunch, record: SpawnRecord): Prom
 		base: record.base,
 		role: record.role,
 		engine: launch.profile.id,
-		...(launch.model ? { model: launch.model } : {}),
+		model: requestedModel(launch.route),
+		modelSource: modelSourceText(launch.route),
 		extensions: launch.extensions,
 		planningSource: place.source,
 		finishAuthor: captureFinishAuthor(cwd, launch.loaded.text, Boolean(place.workspace)),
 		...(place.repo ? { repo: place.repo } : {}),
-		...(launch.hosted ? { agentName: hostedAgentName(record.id) } : {}),
+		...(launch.hosted ? { agentName: hostedAgentName(record.id, launch.options.label) } : {}),
 		...(!group && notificationSession ? { notificationSession } : {}),
 		...(coordinatorTab ? { originTab: coordinatorTab } : {}),
 		...(coordinatorPane ? { originPane: coordinatorPane } : {}),
@@ -466,7 +463,7 @@ async function launchSpawnedJob(launch: SpawnLaunch, job: SpawnedJob): Promise<v
 	await startDetachedJob(launch, job, versions);
 }
 async function startHostedJob(launch: SpawnLaunch, job: SpawnedJob, versions: Promise<void>): Promise<void> {
-	const { options, model } = launch;
+	const { options, route } = launch;
 	await startHosted({
 		jobDir: job.jobDir,
 		id: job.id,
@@ -476,16 +473,16 @@ async function startHostedJob(launch: SpawnLaunch, job: SpawnedJob, versions: Pr
 		preamble: job.preamble,
 		taskFile: `${job.jobDir}/task.md`,
 		role: job.role,
-		...(model ? { model } : {}),
-		...(options.provider ? { provider: options.provider } : {}),
-		...(options.thinking ? { thinking: options.thinking } : {}),
+		model: route.values.model,
+		provider: route.values.provider,
+		thinking: route.values.thinking,
 	});
 	await versions.catch(() => {});
 	console.log(`started ${options.label} (hosted)`);
 	console.log(job.id);
 }
 async function startDetachedJob(launch: SpawnLaunch, job: SpawnedJob, versions: Promise<void>): Promise<void> {
-	const { options, model, group } = launch;
+	const { options, route, group } = launch;
 	const { jobDir, id, root } = job;
 	await openWatchTab({ jobDir, label: options.label, cwd: root, logPath: `${jobDir}/log`, role: job.role });
 	const environment: Record<string, string> = {
@@ -502,11 +499,9 @@ async function startDetachedJob(launch: SpawnLaunch, job: SpawnedJob, versions: 
 		environment.LIMEN_TEAM_ID = group.team;
 		environment.LIMEN_TIMEOUT_MS = String(Math.max(1, (job.memberDeadline ?? group.run.deadline) - Date.now()));
 	}
-	environment.LIMEN_PROVIDER = options.provider ?? "";
-	environment.LIMEN_THINKING = options.thinking ?? "";
-	if (model) {
-		environment.LIMEN_MODEL = model;
-	}
+	environment.LIMEN_PROVIDER = route.values.provider;
+	environment.LIMEN_THINKING = route.values.thinking;
+	environment.LIMEN_MODEL = route.values.model;
 	if (options.timeoutMs) {
 		environment.LIMEN_TIMEOUT_MS = String(options.timeoutMs);
 	}
@@ -546,7 +541,7 @@ export async function startHosted(input: {
 	readonly thinking?: string;
 	readonly continueFile?: string;
 }): Promise<void> {
-	const agentName = hostedAgentName(input.id);
+	const agentName = hostedAgentName(input.id, input.label);
 	const group = (await text(`${input.jobDir}/group`)) || "";
 	const team = (await text(`${input.jobDir}/team`)) || "";
 	try {
@@ -806,14 +801,8 @@ export async function capturedVersions(profile: EngineProfile): Promise<string> 
 	const hunkVersion = hunk && (await probeVersion(hunk));
 	return `${profile.id} ${version}\n${herdrVersion ? `herdr ${herdrVersion}\n` : ""}${hunkVersion ? `hunk ${hunkVersion}\n` : ""}`;
 }
-function workspaceTask(task: string, root: string, repo: string): string {
-	let rewritten = task;
-	for (const { pointer, path } of ticketPointers(task)) {
-		if (path.startsWith("spec/")) {
-			rewritten = rewritten.replace(pointer, pointer.replace(path, `${root}/${path}`));
-		}
-	}
-	return `Repository: ${repo}. Work only in this repository.\n\n${rewritten}`;
+function workspaceTask(task: string, repo: string): string {
+	return `Repository: ${repo}. Work only in this repository.\n\n${task}`;
 }
 export function normalizeLabel(value: string): string {
 	const label = value.trim();

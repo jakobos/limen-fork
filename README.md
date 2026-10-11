@@ -43,17 +43,19 @@ cd /path/to/your-project
 limen init
 ```
 
+`limen init` installs the [dx skills](https://github.com/dikamilo/dx-workflow) into `.agents/skills/` and creates the `context/` folder. It does not commit; review the result and commit it.
+
 Open Pi (`pi`) in that directory, or start an agent tab in Herdr.
 Before you ask for code, define these project files:
 
-- `spec/vision.md`: what the project should do, who it serves, and its scope.
-- `.agents/limen/styleguide.md`: code structure, conventions, and required checks.
+- `context/foundation/vision.md`: what the project should do, who it serves, and its scope.
+- `context/standards/global/*.md`: code structure, conventions, and required checks.
 
 You can ask the agent to help:
 
-> Help me define the project vision and code styleguide before we start work.
+> Help me define the project vision and coding standards before we start work.
 
-`limen init` preserves existing specs. The repository must have at least one commit before a worker starts.
+`limen init` preserves existing files. The repository must have at least one commit before a worker starts.
 
 Planning is committed to Git by default. To keep planning private, run `limen planning private`. Planning files then stay in the canonical project root, and jobs read them through absolute paths. Limen does not copy them into worktrees. `limen planning` shows the current setting. `limen planning committed` restores the default for new jobs.
 
@@ -63,11 +65,11 @@ All projects on that computer use the same installed package.
 ## Work
 
 1. Tell the agent the result you need, such as “Add email sign-in.”
-2. The agent records a ticket, starts jobs, and requests review.
-3. Inspect the result and approve the merge.
+2. The agent shapes it with you into a change (`/dx-new`, `/dx-frame`, `/dx-plan`), starts jobs, and requests review.
+3. Inspect the result and approve the merge. The agent then archives the change with `/dx-archive`.
 
-The specs describe the work. `spec/build.md` records its state.
-A completed job does not prove that a feature is finished or that its branch is ready to merge.
+Change files under `context/changes/` describe the work and carry its `status`. `limen board` shows what is in progress, what is next, and what landed. `limen drop <id> "reason"` stops a change.
+A completed job does not prove that a change is finished or that its branch is ready to merge.
 
 Workers approve tools automatically and have the same access as your account.
 A Git worktree is not a security sandbox. Read the [security notes](SECURITY.md).
@@ -76,7 +78,7 @@ A Git worktree is not a security sandbox. Read the [security notes](SECURITY.md)
 
 After `limen init`, ask the agent:
 
-> Create a Picture map from the code and specs, and open it in my browser.
+> Create a Picture map from the code and the change files, and open it in my browser.
 
 See the [Picture guide](docs/picture.md) for navigation and updates.
 

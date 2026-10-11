@@ -151,6 +151,10 @@ for (const line of task.split("\n")) {
 	} else if (word === "say") {
 		reply = value;
 	} else if (word === "tool") {
+		const results = await fire("tool_call", { toolName: "bash", input: { command: value } });
+		for (const { reason } of results.filter((result) => result?.block)) {
+			record({ event: "tool_result", text: reason });
+		}
 		emit({ type: "tool_execution_start", toolName: "bash", args: { command: value } });
 		await fire("tool_execution_start", { toolName: "bash", args: { command: value } });
 		emit({ type: "tool_execution_end", toolName: "bash" });

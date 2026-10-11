@@ -1,4 +1,4 @@
-// U6: the hand-written front matter parser and the Markdown renderer read untrusted ticket and map files.
+// U6: the hand-written front matter parser and the Markdown renderer read untrusted change and map files.
 // Malformed lines are reported at their line without overwriting good values; prototype keys stay plain data;
 // raw HTML and executable links never reach the page.
 import assert from "node:assert/strict";

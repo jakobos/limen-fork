@@ -58,20 +58,39 @@ export async function privatePlanningFile(root: string, path: string): Promise<s
 	return absolute;
 }
 
-/** Read every `Ticket:` path, preserving order and excluding sentence punctuation. */
-export function ticketPointers(task: string): Array<{ path: string; pointer: string }> {
-	return [...task.matchAll(/\bTicket:\s+(\S+)/g)].flatMap(([pointer, token]) => {
-		const path = token?.replace(/[.,;:!?)\]'"`]+$/, "");
-		return path ? [{ path, pointer }] : [];
+const CHANGE_POINTER = /\bChange:\s+(\S+)/g;
+const CHANGE_PATH = /(?:^|\/)context\/(changes|efforts)\/([a-z0-9]+(?:-[a-z0-9]+)*)\/?$/;
+
+/** Each `Change:` pointer as written, with its folder path (ending "/"), id and kind; prose after `Change:` is skipped. */
+function pointerMatches(
+	text: string,
+): Array<{ pointer: string; token: string; path: string; id: string; kind: "change" | "effort" }> {
+	return [...text.matchAll(CHANGE_POINTER)].flatMap(([pointer, raw]) => {
+		const token = raw?.replace(/[.,;:!?)\]'"`]+$/, "") ?? "";
+		const [, folder, id] = CHANGE_PATH.exec(token) ?? [];
+		if (!folder || !id) {
+			return [];
+		}
+		const kind = folder === "changes" ? ("change" as const) : ("effort" as const);
+		return [{ pointer, token, path: token.endsWith("/") ? token : `${token}/`, id, kind }];
 	});
 }
 
-/** Check each `Ticket:` path in the task and replace it with its absolute path in the canonical root. */
+/** Every `Change: context/changes/<id>/` or `context/efforts/<id>/` pointer in a task, in order. */
+export function changePointers(
+	text: string,
+): ReadonlyArray<{ readonly path: string; readonly id: string; readonly kind: "change" | "effort" }> {
+	return pointerMatches(text).map(({ path, id, kind }) => ({ path, id, kind }));
+}
+
+/** Check each relative `Change:` folder's identity file and replace the pointer with its absolute path in the canonical root. */
 export async function privatePlanningTask(root: string, task: string): Promise<string> {
 	let result = task;
-	for (const { pointer, path } of ticketPointers(task)) {
-		const absolute = await privatePlanningFile(root, path);
-		result = result.replace(pointer, pointer.replace(path, absolute));
+	for (const { pointer, token, path, kind } of pointerMatches(task)) {
+		await privatePlanningFile(root, `${path}${kind}.md`);
+		if (!isAbsolute(token)) {
+			result = result.replace(pointer, pointer.replace(token, `${resolve(root, path)}/`));
+		}
 	}
 	return result;
 }
@@ -80,8 +99,8 @@ export async function privatePlanningTask(root: string, task: string): Promise<s
 export function privatePlanningGuidance(root: string): string {
 	return [
 		`Planning source: private. Read canonical planning in ${root}; do not copy, link, stage or commit it. Planning-commit instructions apply only to committed mode. Product-code Git requirements are unchanged.`,
-		`Vision (read-only): ${root}/spec/vision.md`,
-		`Board (read-only): ${root}/spec/build.md`,
+		`Vision (read-only): ${root}/context/foundation/vision.md`,
+		"Board: run `limen board`",
 		"",
 	].join("\n");
 }

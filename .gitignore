@@ -6,4 +6,5 @@ coverage/
 /Users/
 
 # operator-local Linear mirror config (per-project, never shared)
-spec/linear.md*
+.agents/limen/linear.md*
+.worktrees/

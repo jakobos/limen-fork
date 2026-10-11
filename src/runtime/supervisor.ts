@@ -363,9 +363,13 @@ async function hostedEngineLaunch(jobDir: string): Promise<{ profile: EngineProf
 		label: requiredEnvironment("LIMEN_LABEL"),
 		preamble: requiredEnvironment("LIMEN_PREAMBLE"),
 		extensions: [
-			...["hosted", "steering", "communication", ...((await jobMembership(jobDir)) ? ["group-peer"] : [])].map(
-				(name) => `${PACKAGE_ROOT}/hook/${name}.ts`,
-			),
+			...[
+				"hosted",
+				"steering",
+				"communication",
+				"permissions",
+				...((await jobMembership(jobDir)) ? ["group-peer"] : []),
+			].map((name) => `${PACKAGE_ROOT}/hook/${name}.ts`),
 			...(await readWorkerExtensions(jobDir, profile.id)),
 		],
 		...(process.env.LIMEN_PROVIDER ? { provider: process.env.LIMEN_PROVIDER } : {}),

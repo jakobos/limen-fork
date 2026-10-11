@@ -20,6 +20,8 @@ type NewJob = {
 	readonly engine: EngineId;
 	/** The model the spawner asked for, compared with the served model in `limen jobs <id>`. */
 	readonly model?: string;
+	/** Each field's value and source from `resolveModels`, shown beside the requested model. */
+	readonly modelSource?: string;
 	readonly extensions?: readonly string[];
 	readonly planningSource: string;
 	readonly repo?: string;
@@ -65,6 +67,9 @@ export async function publishJob(jobDir: string, job: NewJob): Promise<void> {
 		};
 		if (job.model) {
 			files.model = `${job.model}\n`;
+		}
+		if (job.modelSource) {
+			files["model-source"] = job.modelSource;
 		}
 		if (job.repo) {
 			files.repo = `${job.repo}\n`;

@@ -59,22 +59,11 @@ export function engineProfile(id: string): EngineProfile {
 	}
 	throw new Error(`unknown engine ${id}`);
 }
-export function resolveSpawnEngine(flag?: string): EngineProfile {
-	const raw = (flag ?? process.env.LIMEN_ENGINE)?.trim() || "omp";
-	if (raw === "pi" || raw === "omp") {
-		return ENGINES[raw];
-	}
-	throw new Error("--engine must be pi or omp");
-}
 export function engineBinary(profile: EngineProfile): string {
 	return process.env[profile.binaryEnv] ?? profile.binaryDefault;
 }
 export async function jobProfile(jobDir: string): Promise<EngineProfile> {
 	return engineProfile((await readFile(`${jobDir}/engine`, "utf8").catch(() => "pi")).trim() || "pi");
-}
-// Package fallback when neither --model nor the role's environment variable names a model.
-export function defaultModel(review: boolean): string {
-	return process.env[review ? "LIMEN_REVIEWER_MODEL" : "LIMEN_WORKER_MODEL"]?.trim() || "openai-codex/gpt-6-astra:high";
 }
 export function preflightEngine(profile: EngineProfile, model?: string, provider?: string): void {
 	if (!(process.env.PATH ?? "").split(":").some((dir) => dir && existsSync(`${dir}/${profile.binaryDefault}`))) {
@@ -219,9 +208,7 @@ export function argvFor(profile: EngineProfile, slots: EngineArgv): string[] {
 		args.push("--config", slots.skillConfig);
 	}
 	args.push("--append-system-prompt", slots.preamble);
-	// OMP serves `pi-claude/…` models from a local bridge extension. The model id alone selects it:
-	// OMP rejects `--provider pi-claude`, so the provider stays in the job record but not on argv.
-	const bridged = profile.id === "omp" && !!slots.model?.startsWith("pi-claude/");
+	const bridged = profile.id === "omp" && (slots.provider === "pi-claude" || !!slots.model?.startsWith("pi-claude/"));
 	const named = [
 		...slots.extensions,
 		...(bridged ? bridgeExtensions() : []),
@@ -236,19 +223,27 @@ export function argvFor(profile: EngineProfile, slots: EngineArgv): string[] {
 		seen.add(key);
 		args.push("--extension", path);
 	}
-	if (slots.provider && !bridged) {
-		args.push("--provider", slots.provider);
-	}
-	if (slots.model) {
-		args.push("--model", slots.model);
-	}
-	if (slots.thinking) {
-		args.push("--thinking", slots.thinking);
-	}
+	args.push(...routeArgs(bridged, slots));
 	if (slots.continueValue !== undefined) {
 		args.push("--continue", slots.continueValue);
 	} else {
 		args.push(`@${slots.taskFile}`);
+	}
+	return args;
+}
+
+// OMP serves `pi-claude/…` models from a local bridge extension and rejects `--provider pi-claude`,
+// so the provider stays in the job record and prefixes a bare model id on argv.
+function routeArgs(bridged: boolean, slots: EngineArgv): string[] {
+	const args: string[] = [];
+	if (slots.provider && !bridged) {
+		args.push("--provider", slots.provider);
+	}
+	if (slots.model) {
+		args.push("--model", bridged && !slots.model.includes("/") ? `pi-claude/${slots.model}` : slots.model);
+	}
+	if (slots.thinking) {
+		args.push("--thinking", slots.thinking);
 	}
 	return args;
 }

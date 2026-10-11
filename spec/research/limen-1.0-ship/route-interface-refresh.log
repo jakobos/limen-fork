@@ -1,8 +1,0 @@
-Readiness input revision: 8a3589c315866a8c8d0885f0318d4e5e31a1e214
-Checked at: 2026-09-12T08:44:32Z
-Installed Pi version: 0.84.2
-PASS: dist/cli/auth-check.js byte-identical to retained inspected interface
-15f1601346f1ee9da3d560b133fb65aa9654fa002a5474224913e6ca99517aed  /home/overment/.nvm/versions/node/v24.19.0/lib/node_modules/@earendil-works/pi-coding-agent/dist/cli/auth-check.js
-PASS: dist/core/model-runtime.d.ts byte-identical to retained inspected interface
-cac728f9b70f18f39ae54073ee1c088eb256707364714bc57235b04f7e18d9c8  /home/overment/.nvm/versions/node/v24.19.0/lib/node_modules/@earendil-works/pi-coding-agent/dist/core/model-runtime.d.ts
-Only local files compared. No Pi auth call, catalog refresh, agent session, generated probe or network request.

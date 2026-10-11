@@ -1,19 +1,22 @@
 import { spawnSync } from "node:child_process";
+import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { callerRole, effectivePermissions, renderPermissions } from "../src/project/autonomy.ts";
+import { loadBoard, renderBoard } from "../src/project/changes.ts";
 import { formatDrift, inheritFile, listDrift, readOptional } from "../src/project/inherit.ts";
 import {
+	changePointers,
 	planningSource,
 	privatePlanningGuidance,
 	recordedPlanningSource,
-	ticketPointers,
 } from "../src/project/planning.ts";
 import { assistantStopReason } from "../src/runtime/stream.ts";
 
 const CONTEXT_TYPE = "limen-project-context";
 const MAX_CONTEXT_LINES = 1000;
-const BOARD_ADVISORY_LINES = 120;
-const STYLE_FILE = ".agents/limen/styleguide.md";
-const VISION_FILE = "spec/vision.md";
+const STANDARDS_DIR = "context/standards/global/";
+const VISION_FILE = "context/foundation/vision.md";
+const WORKING_RULES_FILE = ".agents/limen/working-rules.md";
 const MAX_REMINDER_HEADINGS = 8;
 const jevgrepSeen = new Map<string, boolean>();
 
@@ -29,7 +32,10 @@ type ToolEvent = {
 };
 type ToolPatch = { readonly content: ToolContent[] };
 type PiApi = {
-	on(event: "before_agent_start", handler: (event: StartEvent, context: Context) => StartResult | undefined): void;
+	on(
+		event: "before_agent_start",
+		handler: (event: StartEvent, context: Context) => Promise<StartResult | undefined>,
+	): void;
 	on(event: "message_end", handler: (event: unknown) => void): void;
 	on(event: "tool_result", handler: (event: ToolEvent, context: Context) => ToolPatch | undefined): void;
 };
@@ -40,14 +46,14 @@ type ReminderKind = "specs" | "style" | "vision";
 export default function limenCommunication(pi: PiApi): void {
 	let lastTouch: string | undefined;
 	let lastFailure: string | undefined;
-	pi.on("before_agent_start", (event, context) => {
+	pi.on("before_agent_start", async (event, context) => {
 		const root = process.env.LIMEN_CONTEXT_ROOT ?? context.cwd;
 		const job = process.env.LIMEN_JOB === "1";
 		const touched = lastTouch;
 		const failed = lastFailure;
 		lastTouch = undefined;
 		lastFailure = undefined;
-		const extra = guidancePrompt(root, job);
+		const extra = await guidancePrompt(root, job);
 		const message = {
 			customType: CONTEXT_TYPE,
 			content: turnCue(root, job, isWakePrompt(event.prompt), touched, failed),
@@ -90,41 +96,52 @@ function isWakePrompt(prompt: string | undefined): boolean {
 	return typeof prompt === "string" && prompt.startsWith("Limen job ");
 }
 
-function guidancePrompt(cwd: string, job: boolean): string {
+async function guidancePrompt(cwd: string, job: boolean): Promise<string> {
 	const parts: string[] = [];
 	if (privatePlanning(cwd, job)) {
 		parts.push(privatePlanningGuidance(cwd));
 	}
 	if (!job) {
-		const shop = readInheritedAgents(cwd);
-		if (shop) {
-			parts.push(shop);
-		}
+		parts.push(readInheritedAgents(cwd));
 	}
-	const register = readRegister(cwd);
-	if (register) {
-		parts.push(register);
-	}
+	parts.push(readRegister(cwd));
 	if (hasJevgrep()) {
 		parts.push(registerCue(cwd, "Search"));
 	}
 	if (!job) {
-		const vision = boundFile(cwd, VISION_FILE, "Vision");
-		if (vision) {
-			parts.push(vision);
-		}
+		parts.push(boundFile(cwd, VISION_FILE, "Vision"));
 	}
-	const style = boundFile(cwd, STYLE_FILE, "Styleguide");
-	if (style) {
-		parts.push(style);
-	}
+	parts.push(boundText(readStandards(cwd), STANDARDS_DIR, "Standards"));
 	if (!job) {
-		const digest = boardDigest(cwd);
-		if (digest) {
-			parts.push(digest);
-		}
+		parts.push(boundFile(cwd, WORKING_RULES_FILE, "Working rules"));
+		parts.push(boundText(renderBoard(await loadBoard(cwd)), "limen board", "Board"));
 	}
-	return parts.join("\n\n");
+	parts.push(permissionsBlock(cwd));
+	return parts.filter(Boolean).join("\n\n");
+}
+
+/** Read fresh on every turn, so an edit to either autonomy file applies to the next turn. Never throws. */
+function permissionsBlock(root: string): string {
+	try {
+		const caller = callerRole(process.env, root);
+		return renderPermissions(effectivePermissions(root, caller.role, caller.interactiveCoordinator));
+	} catch (error) {
+		const reason = error instanceof Error ? error.message : String(error);
+		return `Permissions for this repo could not be computed (${reason}); treat push, PRs, and merges as denied.`;
+	}
+}
+
+/** Every global standard in name order, as one text; the caller bounds the total. */
+function readStandards(cwd: string): string {
+	const dir = join(cwd, STANDARDS_DIR);
+	if (!existsSync(dir)) {
+		return "";
+	}
+	return readdirSync(dir)
+		.filter((name) => name.endsWith(".md"))
+		.sort()
+		.map((name) => readOptional(join(dir, name)) ?? "")
+		.join("\n\n");
 }
 
 /** `jg` is a common name; only Jevgrep's help mentions Jevgrep. Probed once per PATH. */
@@ -155,18 +172,15 @@ function turnCue(
 		lines.push(registerCue(cwd, "Wake"));
 	}
 	if (job) {
-		const ticket = jobTicket(cwd);
-		if (ticket) {
-			lines.push(`Ticket: ${ticket}`);
+		const change = jobChange(cwd);
+		if (change) {
+			lines.push(`Change: ${change}`);
 		}
 		const prefix = privatePlanning(cwd, job) ? `${cwd}/` : "";
 		if (readOptional(join(cwd, VISION_FILE)) !== undefined) {
 			lines.push(
-				`Vision (read-only): \`${prefix}spec/vision.md\` — durable intent. Load it before choosing or starting work.`,
+				`Vision (read-only): \`${prefix}${VISION_FILE}\` — durable intent. Load it before choosing or starting work.`,
 			);
-		}
-		if (readOptional(join(cwd, "spec/build.md")) !== undefined) {
-			lines.push(`Board (read-only): \`${prefix}spec/build.md\` — consult before reporting work; do not edit.`);
 		}
 	}
 	if (lastTouch) {
@@ -176,10 +190,6 @@ function turnCue(
 		const drift = formatDrift(listDrift(cwd));
 		if (drift) {
 			lines.push(drift);
-		}
-		const board = boardAdvisory(cwd);
-		if (board) {
-			lines.push(board);
 		}
 	}
 	return ["<limen-project-context>", ...lines, "</limen-project-context>"].join("\n\n");
@@ -216,10 +226,7 @@ function registerCue(cwd: string, heading: string): string {
 }
 
 function readInheritedAgents(cwd: string): string {
-	if (readOptional(join(cwd, "AGENTS.md")) !== undefined) {
-		return "";
-	}
-	const inherited = inheritFile(cwd, "AGENTS.md", "templates/agents.md");
+	const inherited = inheritFile(cwd, ".agents/limen/agents.md", "templates/agents.md");
 	return inherited ? boundText(inherited.text, inherited.path, "Shop manual") : "";
 }
 
@@ -236,33 +243,9 @@ function boundText(text: string, path: string, label: string): string {
 	const content = lines.slice(0, MAX_CONTEXT_LINES).join("\n");
 	const notice =
 		lines.length > MAX_CONTEXT_LINES
-			? `\n\n[${path} truncated to ${MAX_CONTEXT_LINES} of ${lines.length} lines; read the file for remaining context.]`
+			? `\n\n[${path} truncated to ${MAX_CONTEXT_LINES} of ${lines.length} lines; read it for remaining context.]`
 			: "";
 	return `## ${label} (${path})\n${content}${notice}`;
-}
-
-function boardAdvisory(cwd: string): string {
-	const board = readOptional(join(cwd, "spec/build.md"));
-	if (board === undefined) {
-		return "";
-	}
-	const count = trimmedLines(board).length;
-	if (count <= BOARD_ADVISORY_LINES) {
-		return "";
-	}
-	return `spec/build.md is ${count} lines; fold older PROVEN entries into monthly highlights.`;
-}
-
-function boardDigest(cwd: string): string {
-	const board = readOptional(join(cwd, "spec/build.md"));
-	if (board === undefined) {
-		return "";
-	}
-	const body = ["NOW", "NEXT"]
-		.map((heading) => markdownSection(board, heading))
-		.filter(Boolean)
-		.join("\n\n");
-	return body ? boundText(body, "spec/build.md", "Board digest") : "";
 }
 
 function markdownSection(text: string, heading: string): string {
@@ -281,7 +264,7 @@ function markdownSection(text: string, heading: string): string {
 	return lines.slice(start, end).join("\n").trim();
 }
 
-function jobTicket(cwd: string): string {
+function jobChange(cwd: string): string {
 	const id = process.env.LIMEN_JOB_ID?.trim();
 	if (!id) {
 		return "";
@@ -290,7 +273,7 @@ function jobTicket(cwd: string): string {
 	if (task === undefined) {
 		return "";
 	}
-	return ticketPointers(task)[0]?.path ?? "";
+	return changePointers(task)[0]?.path ?? "";
 }
 
 function reminderKind(event: ToolEvent): ReminderKind | undefined {
@@ -336,7 +319,7 @@ function posixPath(path: string): string {
 }
 
 function isSpecPath(path: string): boolean {
-	return /(?:^|\/)spec\//.test(posixPath(path));
+	return /(?:^|\/)context\/(?:changes|efforts|foundation)\//.test(posixPath(path));
 }
 
 function isCodePath(path: string): boolean {
@@ -347,10 +330,10 @@ function isCodePath(path: string): boolean {
 }
 
 function projectReminder(cwd: string, kind: "style" | "vision"): string {
-	const relative = kind === "style" ? STYLE_FILE : VISION_FILE;
-	const label = kind === "style" ? "Styleguide" : "Vision";
-	const text = readOptional(join(cwd, relative));
-	if (text === undefined) {
+	const relative = kind === "style" ? STANDARDS_DIR : VISION_FILE;
+	const label = kind === "style" ? "Standards" : "Vision";
+	const text = kind === "style" ? readStandards(cwd) : (readOptional(join(cwd, relative)) ?? "");
+	if (!text.trim()) {
 		return `[limen] ${label}: no project file at ${relative}.`;
 	}
 	const headings = markdownHeadings(text);
@@ -384,7 +367,7 @@ function isVisionCommand(command: string): boolean {
 	if (/\bgit\s+merge\b/.test(command)) {
 		return true;
 	}
-	return /\b(?:mkdir|cp|mv|touch|install)\b/.test(command) && /spec\/features\/planned\//.test(command);
+	return /\b(?:mkdir|cp|mv|touch|install)\b/.test(command) && /context\/changes\//.test(command);
 }
 
 function appendText(content: readonly ToolContent[] | undefined, text: string): ToolContent[] {

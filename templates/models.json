@@ -1,0 +1,4 @@
+{
+	"default": { "engine": "omp", "provider": "openai-codex", "model": "gpt-6-astra", "thinking": "high" },
+	"roles": {}
+}

@@ -1,8 +1,0 @@
-# Narrow Limen 1.0 post-release quality nits
-
-These are post-1.0 follow-ups, not tag gates or authorization to reopen parked work. The quality verdict and checks are in `QUALITY-ALIGN.md`.
-
-- **Reconcile owner summaries.** The authorized board writer should refresh `spec/build.md`: its NO-GO checkpoint, pending Johnny proof and route-refusal blocker conflict with the newer release handoff and Adam's explicit skip. The vision owner should refresh `spec/vision.md`'s current-direction paragraph, which still describes landed startup ownership as remaining work. Keep durable principles unchanged.
-- **Subtract before growing.** `src/` has 4,006 lines against the 4,010-line structure budget (`test/structure.test.ts`). `hook/wake.ts` has 980 lines across wake delivery, lifecycle, subscriptions and display; `src/herdr.ts` has 544. Later work should identify a specific responsibility to remove or simplify, not add shared helper bags or a workflow engine just to satisfy a count.
-- **Keep retry claims bounded by the actual implementation.** `hook/wake.ts`'s `releaseUncounted` releases errored/aborted turns without incrementing the ceiling. Wake-ceiling work (F090) stays parked; this note grants no merge, repair or rebase authority. Do not advertise a universal two-attempt stop while it remains deferred.
-- **Preserve the receiver-proof distinction.** The Johnny control held export visibility after the actual turn completed. Future short summaries should say “held/released export,” not “held/released turn.” `src/finish-turn.ts` reports operator-trusted evidence, not receiver-origin authentication. No new receiver service or automatic proof gate is proposed.

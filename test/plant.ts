@@ -25,30 +25,21 @@ export type RunOptions = {
 	readonly input?: string;
 };
 
-export const TICKET = "spec/features/active/F001-demo/ticket.md";
-const ticket = `---
-touches:
-  - demo.place
-opened: 2026-10-06
+export const CHANGE = "context/changes/demo/";
+const change = `---
+change_id: demo
+title: The demo plant has one change
+type: feature
+effort: null
+slice: null
+status: planned
+created: 2026-10-06
+updated: 2026-10-06
+archived_at: null
+touches: [demo.place]
 ---
 
-# F001 · The demo plant has one ticket
-
-## Outcome
-
-A throwaway plant for one test file.
-
-## Scope
-
-- Everything.
-
-## Out of scope
-
-- Nothing.
-
-## Acceptance
-
-- The scenario passes.
+## Notes
 `;
 const node = (kind: string, id: string, parent: string) => `---
 schema: architecture-map/1
@@ -71,6 +62,8 @@ export async function plant(): Promise<Plant> {
 	await Promise.all([mkdir(bin), mkdir(join(parent, "home"))]);
 	await Promise.all(["pi", "omp"].map((name) => symlink(FAKE_ENGINE, join(bin, name))));
 	await writeFile(join(parent, "sink.mjs"), sinkSource(parent));
+	const ship = { canCommit: "allow", canPush: "allow", canOpenPr: "allow", canMerge: "allow" };
+	await writeFile(join(parent, "autonomy.json"), JSON.stringify({ profiles: { ship }, repos: [], default: "ship" }));
 	const env = {
 		PATH: `${bin}:${dirname(process.execPath)}:/usr/bin:/bin:/usr/sbin:/sbin`,
 		HOME: join(parent, "home"),
@@ -82,6 +75,7 @@ export async function plant(): Promise<Plant> {
 		GIT_CONFIG_NOSYSTEM: "1",
 		NODE_NO_WARNINGS: "1",
 		NODE_OPTIONS: `--import=${join(parent, "sink.mjs")}`,
+		LIMEN_AUTONOMY_FILE: join(parent, "autonomy.json"),
 	};
 	const made: Plant = {
 		parent,
@@ -95,13 +89,15 @@ export async function plant(): Promise<Plant> {
 		},
 	};
 	await repository(root);
+	// A dx-init entry in the skills lock keeps init offline: it skips the dx skill install.
+	await writeFile(join(root, "skills-lock.json"), `${JSON.stringify({ version: 1, skills: { "dx-init": {} } })}\n`);
 	const init = limen(made, ["init"]);
 	if (init.status !== 0) {
 		throw new Error(`limen init failed: ${init.stderr}`);
 	}
-	await mkdir(join(root, dirname(TICKET)), { recursive: true });
+	await mkdir(join(root, CHANGE), { recursive: true });
 	await mkdir(join(root, ".limen/picture/nodes"), { recursive: true });
-	await writeFile(join(root, TICKET), ticket);
+	await writeFile(join(root, CHANGE, "change.md"), change);
 	await writeFile(join(root, ".limen/picture/nodes/demo.md"), node("plant", "demo", "null"));
 	await writeFile(join(root, ".limen/picture/nodes/demo.place.md"), node("module", "demo.place", "demo"));
 	git(root, "add", "-A");

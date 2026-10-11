@@ -1,5 +1,0 @@
-# Outcome
-
-The private planning code from pull request 4 now reads top-down. The planning module has named helpers for path checks and optional reads. Spawn, continue, group start, the hook, and `limen planning` name the private planning step with one short comment each. The docs and template lines that pull request 4 changed are in plain technical English. Behavior did not change: the worker ran one smoke script against `343ee3b` and against the candidate, and the two outputs were the same. Landed fast-forward on `main` at `130cf0c`.
-
-Tests: no test case was removed. In the pull request 4 test in `test/communication-hook.test.ts`, five asserts that pinned prose were replaced by one check of the recorded planning source. No test that existed before pull request 4 changed. Checks: typecheck and Biome pass; the spawn, continue, group, communication hook, template history, and structure tests pass 110 of 110. The worker's full check passed 602 of 605; two failures passed alone, and the third is a spawn timing test that also fails at `343ee3b`.

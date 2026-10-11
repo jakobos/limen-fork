@@ -7,6 +7,7 @@ import { mkdir, realpath, rm, symlink, utimes, writeFile } from "node:fs/promise
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import {
+	CHANGE,
 	git,
 	jobDir,
 	jobFile,
@@ -16,7 +17,6 @@ import {
 	release,
 	repository,
 	spawnJob,
-	TICKET,
 	waitJob,
 } from "./plant.ts";
 
@@ -37,13 +37,13 @@ const traces = () => [
 ];
 
 test("each spawn refusal exits 1, names its cause and leaves no job, worktree or branch", async (context) => {
-	const draft = "spec/features/active/F002-draft/ticket.md";
-	await mkdir(join(p.root, "spec/features/active/F002-draft"));
-	context.after(() => rm(join(p.root, "spec/features/active/F002-draft"), { recursive: true }));
-	await writeFile(join(p.root, draft), "# F002 · Not committed yet\n");
+	const draft = "context/changes/draft/";
+	await mkdir(join(p.root, draft));
+	context.after(() => rm(join(p.root, draft), { recursive: true }));
+	await writeFile(join(p.root, draft, "change.md"), "---\nchange_id: draft\nstatus: new\n---\n");
 	const clean = traces();
 	const refusals: ReadonlyArray<readonly [readonly string[], string, Record<string, string>?]> = [
-		[[`Implement F002. Ticket: ${draft}`], draft],
+		[[`Implement the draft. Change: ${draft}`], `${draft}change.md`],
 		[["--role", "coordinator", "work"], "coordinator"],
 		[["--engine", "claude", "work"], "--engine"],
 		[["--engine", "pi", "work"], "PATH", { PATH: "/usr/bin:/bin" }],
@@ -61,15 +61,15 @@ test("each spawn refusal exits 1, names its cause and leaves no job, worktree or
 
 test("a detached job runs in its own worktree from the base with the exact task and a clean engine environment", async () => {
 	const base = git(p.root, "rev-parse", "HEAD");
-	const task = `block\ncommit\nsay all done\n\nTicket: ${TICKET}  \n\t'quoted' $HOME \`tick\`\n`;
+	const task = `block\ncommit\nsay all done\n\nChange: ${CHANGE}  \n\t'quoted' $HOME \`tick\`\n`;
 	const caller = {
 		PI_SESSION_ID: "coord",
 		PI_SESSION_FILE: join(p.parent, "coord.jsonl"),
 		HERDR_ENV: "1",
 		HERDR_PANE_ID: "p1",
-		LIMEN_JOB_ID: "2026-10-08-f001-coordinator-1a2b3c4d",
+		LIMEN_JOB_ID: "2026-10-08-demo-coordinator-1a2b3c4d",
 	};
-	const id = spawnJob(p, task, ["--detached", "--label", "F001 demo"], { env: caller });
+	const id = spawnJob(p, task, ["--detached", "--label", "demo work · demo"], { env: caller });
 	const dir = jobDir(p, id);
 	const tree = jobFile(p, id, "worktree");
 	assert.notEqual(tree, p.root);

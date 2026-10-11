@@ -1,7 +1,0 @@
-# Outcome
-
-`docs/seat/agent-setup.md` now encodes the nine snags from Adam's live limen-test cold run. It starts with a phase map and a "Who runs a step, and where" table, and each step is labeled HUMAN, Check, or STOP. Every pin and checksum is the same as before (Node 24.21.0, Herdr 0.9.3, omp 18.6.1, moshi-hook 0.3.19), and no `<…>` placeholder is left in a command that the human types. Landed by merge `a5d858e` on `main`. Docs only; no code changed.
-
-Where each snag lives: (1) HUMAN steps run on the laptop: the "Who runs a step" section and the phase 4 login step. (2) Provider hostnames: rule 6 and phase 1, with a Tailscale address check in phase 2. (3) Moshi: phase 6 intro (host setup versus agent hooks, token is not an SSH key), Settings → Hooks, and a `read -rsp` pair command with `--store file` on the seat. (4) Group after `github-setup.sh`: phase 12, with `herdr server stop`, a new-login `id -nG` check, and `systemctl restart user@UID.service` when the pane still misses the group. (5) HTTPS clone: phase 4 "Why HTTPS", a `git_protocol https` check, and a phase 5 fallback. (6) Tailscale Serve: phase 9 HUMAN gate. (7) App Authorize page: phase 11. (8) `interactive_ready`: phase 7 live rule and a phase 13 FIX step (code landed in F770). (9) Phase order and labels: the phase map, the label table, and HUMAN · laptop / phone tags.
-
-Not checked: a second cold run by a fresh agent, and the exact Moshi app menu wording on every app version.

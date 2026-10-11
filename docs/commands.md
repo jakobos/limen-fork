@@ -15,11 +15,13 @@ The coordinator runs these from its Herdr pane during ordinary work.
 Start a worker, a reviewer, or a job in one child repository, or continue a finished job.
 
 ```text
-limen spawn --engine <engine> --provider <provider> --model <model> --thinking <level> "instruction" [--label L] [--branch B] [--role NAME] [--timeout 20m] [--task-file F|-] [--prepare CMD] [--tab|--detached] [--extension PATH ...]
-limen spawn --engine <engine> --provider <provider> --model <model> --thinking <level> --repo R "instruction" [--label L]
-limen spawn --engine <engine> --provider <provider> --model <model> --thinking <level> --review --detached --branch B --label L [--base REF] [--head REF] "instruction"
+limen spawn "instruction" [--label L] [--branch B] [--role NAME] [--timeout 20m] [--task-file F|-] [--prepare CMD] [--tab|--detached] [--extension PATH ...] [--engine E] [--provider P] [--model M] [--thinking T]
+limen spawn --repo R "instruction" [--label L]
+limen spawn --review --detached --branch B --label L [--base REF] [--head REF] "instruction"
 limen continue <id|suffix|label> "follow-up instruction" [--review] [--label L] [--engine pi|omp] [--provider P] [--model M] [--thinking T] [--tab|--detached] [--extension PATH ...]
 ```
+
+Spawn reads `.agents/limen/models.json`; a flag overrides it for one job. Each field comes from the first source that sets it: flag, project role, project default, personal role, personal default, package role, package default. `limen jobs <id>` prints each field's value and source beside the requested model. See [Models](setup.md#models).
 
 `--base` and `--head` pin the range that a review reads. They take a full SHA, a short SHA, or a ref such as a branch or tag; Limen resolves it with `git rev-parse` and records the full SHA. They require `--review`.
 
@@ -27,7 +29,7 @@ limen continue <id|suffix|label> "follow-up instruction" [--review] [--label L] 
 
 Both hosted and detached Pi jobs retain `--no-extensions` and all required Limen hooks. Herdr state reporting remains hosted-only. The selected list is published with the job in `extensions.json`; startup checks that its targets still exist. A missing legacy record means no extras. A malformed record or unavailable target is an error.
 
-For ordinary jobs, `continue` inherits the parent's list when no `--extension` is given. Supplied flags replace the whole list, even if an old path is unavailable; the parent record stays unchanged. Repeat the chosen `--provider`, `--model` and `--thinking` flags: continuation does not inherit those choices. An ordinary fresh `spawn`, including `spawn --branch`, has no user extras unless selected. Group members instead inherit the fixed recorded team list; they cannot replace it. There is no clear-list flag.
+For ordinary jobs, `continue` inherits the parent's list when no `--extension` is given. Supplied flags replace the whole list, even if an old path is unavailable; the parent record stays unchanged. Continuation keeps the parent's engine and resolves `--provider`, `--model` and `--thinking` for its role from `.agents/limen/models.json` unless a flag names them. An ordinary fresh `spawn`, including `spawn --branch`, has no user extras unless selected. Group members instead inherit the fixed recorded team list; they cannot replace it. There is no clear-list flag.
 
 Only paths are retained, not extension source or dependency versions. Later edits or upgrades at those paths affect later launches. See [extension trust and model routes](setup.md#personal-model-routes-and-pi-extensions) before selecting third-party code.
 
@@ -51,7 +53,7 @@ limen open <id|suffix|label>
 - `Needs a decision` (failed or stopped jobs with commits that are not landed)
 - coordinator tabs
 
-Open groups replace individual member candidates with one line: `group <feature>: N member branches; the lead decides (limen group status <id>)`. Closed groups leave the inbox. Work outside groups keeps its ordinary candidate or decision row.
+Open groups replace individual member candidates with one line: `group <change>: N member branches; the lead decides (limen group status <id>)`. Closed groups leave the inbox. Work outside groups keeps its ordinary candidate or decision row.
 
 In a terminal, `jobs` shows an aligned table for people. Through a pipe, it prints the compact format that tools read. `LIMEN_VIEW=human|compact` selects a view. `NO_COLOR` removes the color.
 
@@ -74,23 +76,61 @@ limen unwatch <id|suffix|label> | --all
 
 ### Land and clean up
 
-Merge a job, close the Herdr tabs of a feature, and remove finished worktrees or records.
+Merge a job, close the Herdr tabs of a change, and remove finished worktrees or records.
 
 ```text
 limen land <id|suffix|label> [--onto BRANCH] [--yes]
-limen close <FNNN>
+limen close <change-id>
 limen prune [--retire [--dry-run]]
 ```
 
 `land` merges into the checkout of the plant even when another session has uncommitted files there. It leaves those files as they are. It refuses when a file the merge would change has uncommitted edits, or when the index holds staged changes. A merge that fails beside uncommitted files is aborted, so the checkout returns to its earlier state.
 
-### Tickets
+`land` also refuses unless `canCommit` is `allow` for the caller's role (see Permissions below).
 
-Show who first added a ticket.
+### Permissions
+
+Print what this repo lets the harness do, and which layer set each value.
 
 ```text
-limen ticket-author <ticket-path>
+limen permissions [--repo R] [--role X] [--check-remote]
 ```
+
+Each of `canCommit`, `canPush`, `canOpenPr` and `canMerge` is the strictest of three layers: the profile from the personal file `~/.config/limen/autonomy.json` (`LIMEN_AUTONOMY_FILE` overrides the path), the optional project file `.agents/limen/autonomy.json`, and the role ceiling. A repo picks its profile by the first `repos` rule whose `match` fits its normalized `origin` URL (`github.com/owner/repo`) or, for a pattern that starts with `/` or `~`, its project root; `*` is one path segment and `**` is any number. With no match it gets `default`. A missing or invalid personal file makes every value `deny` and names the error. Every agent sees the same block in its system prompt, read again on each turn.
+
+`--repo` reads another repository root. `--role X` computes the values for a job with that role; `coordinator` means the interactive coordinator. `--check-remote` reads the GitHub rulesets on the default branch and on each literal `protected` branch with `gh api`, and warns when `canMerge` is `ask` or `deny` without a pull request rule, or `allow` without required status checks. It changes nothing.
+
+### Push, PR and merge
+
+Agents never push, open PRs, or merge directly. The coordinator does it through these commands, which check the permissions above for the caller's role. Inside a job session the role ceiling denies them.
+
+```text
+limen push <id|suffix|label>
+limen pr <id|suffix|label> --body-file F [--title T]
+limen pr --template <id|suffix|label>
+limen merge <id|suffix|label>
+limen approve <id|suffix|label> <push|pr|merge>
+```
+
+`push` runs `git push -u origin <branch>` and needs `canPush`. When the job branch is the default branch or matches a `protected` pattern, it needs `canMerge` instead. `pr` needs `canOpenPr` and the push rules, because it pushes first. It then runs `gh pr create` against the default branch. The title is `--title`, else the `title` of the change that the job's `Change:` line names, else the job label. `pr --template` prints the PR template with its tokens filled. It reads `.agents/limen/pr-template.md`, then `.github/pull_request_template.md`, then the package `templates/pr.md`. Write the prose sections, then pass the file with `--body-file`.
+
+`merge` needs `canMerge` and runs `gh pr merge <branch> --auto --<mergeMethod>`, so GitHub merges only after the checks pass. It refuses with "merge needs CI; this branch has no required checks" when neither the rulesets nor the branch protection of the base branch require a status check.
+
+A value of `ask` needs an approval. You run `limen approve` in your own terminal and type the job id again. The approval holds only for the branch head at that moment, so a new commit makes it invalid. An approval for `pr` also lets its push through. Without a terminal, `approve` exits 1.
+
+### Changes
+
+Changes are created and closed with dx skills in the coordinator: `/dx-new`, `/dx-frame`, `/dx-plan`, `/dx-archive`. Limen reads them, checks them, and drops them.
+
+```text
+limen board                                    # NOW / NEXT / RECENT from change and effort files and job records
+limen drop <id> "reason"                       # status: dropped, reason in ## Notes, move to context/archive/
+limen change check [BRANCH]                    # the land check on the change files BRANCH adds or changes
+limen change-author <path>                     # who first added a change folder, change.md, or effort.md
+limen keeper <context/changes/<id>/> (--job ID ... | --group GROUP-ID) [--candidate BRANCH] [--engine E] [--provider P] [--model M] [--thinking T]
+```
+
+`drop` refuses while a live job names the change. For an effort, it drops each child change that is not closed.
 
 ### Map build and refresh
 
@@ -107,7 +147,7 @@ limen picture tick --engine E --provider P --model M --thinking T [--dir D] [--b
 Start a team group, and show the status of, publish, wait for, stop, or close it.
 
 ```text
-limen group start FEATURE --teams N --workers-per-team N --timeout D --worker-timeout D --engine E --provider P --model M --thinking T --worker-thinking T [--team-model team-N=provider/model] [--extension PATH ...] [--team-extension team-N=PATH ...] [--detached|--tab] [--new-run]
+limen group start context/changes/<id> --teams N --workers-per-team N --timeout D --worker-timeout D [--engine E] [--provider P] [--model M] [--thinking T] [--worker-thinking T] [--team-model team-N=provider/model] [--extension PATH ...] [--team-extension team-N=PATH ...] [--detached|--tab] [--new-run]
 limen group status [GROUP-ID] [--json]
 limen group publish [GROUP-ID] [--team team-N] "finding"
 limen group wait [GROUP-ID] [--timeout D]
@@ -121,8 +161,8 @@ Members get their group from their recorded membership. The group lead gives the
 Start a hosted review or task for one GitHub request, or give an answer without a job. The claim ID is the triggering comment ID, or `issue-<number>` when an issue body carries the request.
 
 ```text
-limen github review <root> <claim-id> --engine E --provider P --model M --thinking T
-limen github work <root> <claim-id> --engine E --provider P --model M --thinking T --task "instruction"
+limen github review <root> <claim-id> [--engine E] [--provider P] [--model M] [--thinking T]
+limen github work <root> <claim-id> [--engine E] [--provider P] [--model M] [--thinking T] --task "instruction"
 limen github resolve <root> <claim-id> <handoff-nonce> "no-job answer"
 ```
 
@@ -132,10 +172,11 @@ You run these one time for each project or seat, or a scheduler runs them.
 
 ### Project setup
 
-Create the project files, set up a parent workspace for child repositories, or choose where group planning files live. `limen init` ends with a `next:` line that names the next step, and says so when the repository has no commit yet.
+Install the dx skills and create the project files, set up a parent workspace for child repositories, or choose where planning files live. `limen init` ends with a `next:` line that names the next step, and says so when the repository has no commit yet.
 
 ```text
 limen init
+limen init --update-dx
 limen init --drop-leftovers
 limen workspace init
 limen planning [committed|private]

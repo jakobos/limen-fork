@@ -2,39 +2,45 @@
 // A query must resolve to exactly one job or to none; a timeout must be explicit and fit Node's timer.
 import assert from "node:assert/strict";
 import test from "node:test";
-import { makeJobId, parseDuration, resolveJobId } from "../src/job/job.ts";
+import { continuationLabel, hostedAgentName, makeJobId, parseDuration, resolveJobId } from "../src/job/job.ts";
 
 test("a job resolves by full id, id suffix, exact label or label prefix, and only when one job matches", () => {
 	const ids = [
-		"2026-08-13-f001-implementation-7a2f0b1c",
-		"2026-08-13-f001-review-d4821e3f",
-		"2026-08-14-f002-fix-0000aaaa",
+		"2026-08-13-sign-in-implementation-7a2f0b1c",
+		"2026-08-13-sign-in-review-d4821e3f",
+		"2026-08-14-search-fix-0000aaaa",
 	];
 	const labels = {
-		[ids[0] as string]: "F001 implementation",
-		[ids[1] as string]: "F001 review",
-		[ids[2] as string]: "F002",
+		[ids[0] as string]: "implementation · sign-in",
+		[ids[1] as string]: "review · sign-in",
+		[ids[2] as string]: "search",
 	};
 	const resolves: ReadonlyArray<readonly [string, string]> = [
 		[ids[1] as string, ids[1] as string],
 		["7a2f0b1c", ids[0] as string],
 		["review-d4821e3f", ids[1] as string],
-		["F001 review", ids[1] as string],
-		["f001 impl", ids[0] as string],
-		["F002", ids[2] as string],
+		["review · sign-in", ids[1] as string],
+		["implementation · sign", ids[0] as string],
+		["search", ids[2] as string],
 	];
 	for (const [query, id] of resolves) {
 		assert.equal(resolveJobId(query, ids, labels), id, query);
 	}
-	for (const query of ["F001", "2026-08-1", "ab", "1c", "missing", "  "]) {
+	for (const query of ["sign-in", "2026-08-1", "ab", "1c", "missing", "  "]) {
 		assert.throws(() => resolveJobId(query, ids, labels), query);
 	}
 });
 
-test("a job id hoists the feature number, keeps a bounded slug, and ends in a random suffix", () => {
+test("a job id and agent name hoist the label's change id; a continuation keeps it last", () => {
 	const shape = /^\d{4}-\d{2}-\d{2}-([a-z0-9-]+)-[0-9a-f]{8}$/;
 	const slug = (label: string) => shape.exec(makeJobId(label))?.[1];
-	assert.equal(slug("Review F927 candidate"), "f927-review-candidate");
+	assert.equal(slug("Review the candidate · oauth-login"), "oauth-login-review-the-candidate");
+	assert.equal(slug("follow-up · new-search old-search"), "new-search-follow-up");
+	assert.equal(slug("Review F927 · Candidate"), "review-f927-candidate");
+	const label = "fix the very long change · a-very-long-change-id-indeed";
+	assert.equal(hostedAgentName(`2026-10-11-x-${"0".repeat(7)}a`, label), "limen-a-very-long-chang-0000000a");
+	assert.equal(hostedAgentName("2026-10-11-plain-words-1234abcd", "plain words"), "limen-plain-words-1234abcd");
+	assert.equal(continuationLabel(label), "fix the very long change continue · a-very-long-change-id-indeed");
 	assert.equal(slug("!!!"), "job");
 	const long = slug("an extremely long label that keeps going well past the slug bound");
 	assert.ok(long && long.length <= 32 && !long.endsWith("-"), long);

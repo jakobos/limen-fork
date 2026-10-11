@@ -13,7 +13,7 @@ import {
 	teamRoute,
 } from "../job/group-cabinet.ts";
 import { syncLifecycle } from "../job/group-events.ts";
-import { hostedAgentName, isTerminal, makeJobId } from "../job/job.ts";
+import { continuationLabel, hostedAgentName, isTerminal, makeJobId } from "../job/job.ts";
 import { resolveJob } from "../job/lookup.ts";
 import { publishJob } from "../job/publication.ts";
 import { atomicWrite, finalizeJob } from "../job/record.ts";
@@ -26,22 +26,16 @@ import {
 	workspaceRepository,
 	workspaceRoot,
 } from "../project/git.ts";
+import { type ModelChoice, modelSourceText, requestedModel, resolveModels } from "../project/models.ts";
 import {
+	changePointers,
 	inheritedPlanning,
 	type PlanningSource,
 	privatePlanningFile,
 	privatePlanningTask,
 	recordedPlanningSource,
-	ticketPointers,
 } from "../project/planning.ts";
-import {
-	defaultModel,
-	type EngineId,
-	type EngineProfile,
-	engineProfile,
-	preflightEngine,
-	resolveSpawnEngine,
-} from "../runtime/engine.ts";
+import { type EngineId, type EngineProfile, engineProfile, preflightEngine } from "../runtime/engine.ts";
 import { normalizeWorkerExtensions, readWorkerExtensions } from "../runtime/worker-extensions.ts";
 import { launchWrapper } from "../runtime/wrapper.ts";
 import { parseFlags } from "./flags.ts";
@@ -142,7 +136,7 @@ type ContinuationRecord = {
 	readonly label: string;
 	readonly role: string;
 	readonly engine: EngineId;
-	readonly model: string | undefined;
+	readonly route: ModelChoice;
 	readonly extensions: readonly string[];
 	readonly source: PlanningSource;
 	readonly hosted: boolean;
@@ -160,22 +154,18 @@ type Continuation = {
 	readonly role: string;
 	readonly parentId: string;
 	readonly review: boolean;
-	readonly model: string | undefined;
-	readonly provider: string | undefined;
-	readonly thinking: string | undefined;
+	readonly route: ModelChoice;
 	readonly versions: Promise<void>;
 	readonly group: ContinuationGroup | undefined;
 };
 async function continueJob(args: readonly string[], cwd: string, locked = false): Promise<void> {
 	const options = parseContinueArgs(args);
-	const { review, tab, detached, label, model, provider, thinking } = options;
+	const { review, tab, detached, label } = options;
 	const herdr = herdrAvailable();
 	const hosted = detached ? false : tab || herdr;
 	if (tab && !herdr) {
 		throw new Error("hosted continue requires Herdr (HERDR_ENV=1); use --detached for an ordinary job");
 	}
-	const chosenModel = model ?? defaultModel(review);
-
 	// A job that continues from its own worktree resolves jobs in its canonical root.
 	const inherited = workspaceRoot(cwd) ? undefined : inheritedPlanning(repoRoot(cwd));
 	const root = inherited?.root ?? (await commandRoot(cwd));
@@ -191,13 +181,17 @@ async function continueJob(args: readonly string[], cwd: string, locked = false)
 	const parent = await readParentJob(root, parentId, parentDir, membership, options.engine);
 	const profile = engineProfile(parent.engine);
 	const extensions = await continuationExtensions(parentDir, membership, options.selected, cwd, profile.id);
-	preflightEngine(profile, chosenModel, provider);
+	const role = review ? "reviewer" : (await text(`${parentDir}/role`)) || "worker";
+	// The continuation keeps its parent's recorded engine; the other fields resolve for its role.
+	const flags = { engine: parent.engine, provider: options.provider, model: options.model, thinking: options.thinking };
+	const resolved = resolveModels(root, role, flags);
+	const route: ModelChoice = { values: resolved.values, sources: { ...resolved.sources, engine: "parent job" } };
+	preflightEngine(profile, route.values.model, route.values.provider);
 	const source = recordedPlanningSource(parentDir);
 	const followUp = await continuationTask(root, parentDir, options.instruction, source, membership);
-	const finalLabel = label ?? `${(await text(`${parentDir}/label`)) || parentId} · continue`;
+	const finalLabel = label ?? continuationLabel((await text(`${parentDir}/label`)) || parentId);
 	const id = makeJobId(finalLabel);
 	const jobDir = `${root}/.limen/jobs/${id}`;
-	const role = review ? "reviewer" : (await text(`${parentDir}/role`)) || "worker";
 	const preamble = resolvePreamble(root, role);
 	const member = membership?.member
 		? await claimMember(membership.run, membership.member.team, "worker", id, parentId)
@@ -219,7 +213,7 @@ async function continueJob(args: readonly string[], cwd: string, locked = false)
 		label: finalLabel,
 		role,
 		engine: profile.id,
-		model: chosenModel,
+		route,
 		extensions,
 		source,
 		hosted,
@@ -237,9 +231,7 @@ async function continueJob(args: readonly string[], cwd: string, locked = false)
 		role,
 		parentId,
 		review,
-		model: chosenModel,
-		provider,
-		thinking,
+		route,
 		group,
 	};
 	await launchContinuation(continuation, profile, hosted, membership?.run);
@@ -317,11 +309,8 @@ async function readParentJob(
 	}
 	const session = sessions.sort().at(-1);
 	const parentEngine = (await text(`${parentDir}/engine`)) || "pi";
-	if (engine) {
-		const requested = resolveSpawnEngine(engine);
-		if (requested.id !== parentEngine) {
-			throw new Error(`continue --engine ${engine} does not match parent engine ${parentEngine}`);
-		}
+	if (engine && engine !== parentEngine) {
+		throw new Error(`continue --engine ${engine} does not match parent engine ${parentEngine}`);
 	}
 	return { id: parentId, dir: parentDir, worktree, branch, repo, session, engine: parentEngine };
 }
@@ -363,7 +352,7 @@ async function continuationExtensions(
 	}
 	return extensions;
 }
-/** Private planning: carry the parent's canonical ticket and check every pointer before a record exists. */
+/** Private planning: carry the parent's canonical change and check every pointer before a record exists. */
 async function continuationTask(
 	root: string,
 	parentDir: string,
@@ -375,9 +364,9 @@ async function continuationTask(
 	if (source !== "private") {
 		return followUp;
 	}
-	const parentTicket = ticketPointers(await readFile(`${parentDir}/task.md`, "utf8"))[0]?.path;
-	if (parentTicket && ticketPointers(followUp).length === 0) {
-		followUp += `\n\nTicket: ${parentTicket}`;
+	const parentChange = changePointers(await readFile(`${parentDir}/task.md`, "utf8"))[0]?.path;
+	if (parentChange && changePointers(followUp).length === 0) {
+		followUp += `\n\nChange: ${parentChange}`;
 	}
 	followUp = await privatePlanningTask(root, followUp);
 	if (membership?.member) {
@@ -414,12 +403,13 @@ async function publishContinuation(record: ContinuationRecord): Promise<void> {
 		role: record.role,
 		engine: record.engine,
 		extensions: record.extensions,
-		...(record.model ? { model: record.model } : {}),
+		model: requestedModel(record.route),
+		modelSource: modelSourceText(record.route),
 		planningSource: record.source,
 		parent: parent.id,
 		session: { source: `${parent.dir}/session/${parent.session}`, name: parent.session ?? "" },
 		...(parent.repo ? { repo: parent.repo } : {}),
-		...(record.hosted ? { agentName: hostedAgentName(id), continueTask: record.task } : {}),
+		...(record.hosted ? { agentName: hostedAgentName(id, record.label), continueTask: record.task } : {}),
 		...(!membership && notificationSession ? { notificationSession } : {}),
 		...(coordinatorTab ? { originTab: coordinatorTab } : {}),
 		...(coordinatorPane ? { originPane: coordinatorPane } : {}),
@@ -459,9 +449,9 @@ async function startHostedContinuation(continuation: Continuation): Promise<void
 			taskFile: `${jobDir}/task.md`,
 			role: continuation.role,
 			continueFile: `${jobDir}/continue`,
-			...(continuation.model ? { model: continuation.model } : {}),
-			...(continuation.provider ? { provider: continuation.provider } : {}),
-			...(continuation.thinking ? { thinking: continuation.thinking } : {}),
+			model: continuation.route.values.model,
+			provider: continuation.route.values.provider,
+			thinking: continuation.route.values.thinking,
 		});
 	} catch (error) {
 		await versions.catch(() => {});
@@ -487,16 +477,14 @@ async function startDetachedContinuation(continuation: Continuation): Promise<vo
 		LIMEN_LABEL: label,
 		LIMEN_CONTEXT_ROOT: root,
 		LIMEN_CONTINUE: "1",
-		LIMEN_PROVIDER: continuation.provider ?? "",
-		LIMEN_THINKING: continuation.thinking ?? "",
+		LIMEN_PROVIDER: continuation.route.values.provider,
+		LIMEN_THINKING: continuation.route.values.thinking,
+		LIMEN_MODEL: continuation.route.values.model,
 	};
 	if (group) {
 		environment.LIMEN_GROUP_ID = group.id;
 		environment.LIMEN_TEAM_ID = group.team;
 		environment.LIMEN_TIMEOUT_MS = String(Math.max(1, group.deadline - Date.now()));
-	}
-	if (continuation.model) {
-		environment.LIMEN_MODEL = continuation.model;
 	}
 	let wrapperPid: number;
 	try {

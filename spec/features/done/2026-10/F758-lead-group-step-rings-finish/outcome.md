@@ -1,5 +1,0 @@
-# Outcome
-
-When the interactive coordinator that leads a group ends a turn that wrote or changed `group/synthesis.md`, or closed the group, Limen now sends the project's finish webhook once for that step. The payload names the feature and the step (for example `F759 lead synthesis`). Its handoff says "Lead step done … Next step: owner decision …". It never suggests landing, and it adds "The feature says do not land." when the ticket or brief says so. A hosted job, an idle turn with no change, and a project without `.limen/finish-webhook.env` send nothing. The receipt is under the group cabinet in `lead-steps/`. Worker commits `1bce4c9`..`3cacb1a`; merge `6ed0016`.
-
-Checks on the merge: typecheck and Biome pass; the sender script parses; 166 of 166 tests pass in `test/lead-step-finish.test.ts`, the finish webhook, receipt, and helper tests, `test/group-command.test.ts`, and `test/inherit.test.ts`. The worker's own full `npm run check` was still running at landing. Not proven live: this coordinator pane registered as lead by hand, so its hook does not run the new turn-end path until the pane restarts.

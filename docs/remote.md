@@ -178,6 +178,6 @@ Accepted claims and cursors live under `/var/lib/limen-github/state/<sha256-of-a
 
 ## Related
 
-- [Vision](../spec/vision.md) — durable intent, including the seat/window split.
-- [F013 remote seat](../spec/features/done/2026-09/F013-remote-seat/ticket.md) — shop manual names seat vs window.
+- [Vision](../context/foundation/vision.md) — durable intent, including the seat/window split.
+- [Shop manual](../templates/agents.md) — names seat vs window.
 - [SECURITY.md](../SECURITY.md) — a job runs as you (`omp --auto-approve`), wherever the seat is.

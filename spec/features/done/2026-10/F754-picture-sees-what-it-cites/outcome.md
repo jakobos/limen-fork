@@ -1,5 +1,0 @@
-# Outcome
-
-The map now refreshes when any file it cites changes, including files that only a feature or journey cites. `limen picture tick --dry-run` prints one line in every case; on the Mega map it now prints `map is current`. `limen picture build` warns `source.missing` for a cited path that does not exist, and the map still renders. The panel for a place lists the features and journeys that touch it, and a click selects one. The picture prompt tells the job to cite every file that a body names. Worker commits `310efb6`..`601a19d`; merge `8183fc0` kept the new README shape.
-
-Checks: picture tests, typecheck, and Biome pass. The full check ran under a load average of about 39 and stopped at the one-hour limit after 390 passes. Seven timing tests failed under that load (continue refusal, detached idle tool, hanging sender, hosted spawn with killed caller, plant plate, sleeping descendant, stop with delayed discovery); each passed when run alone on both `main` and the merge. The test files that the limit cancelled passed 98 of 98. Paths outside the project root (`../x`) are not flagged as missing; that stays open. No dataset changed.

@@ -23,7 +23,8 @@ const job = (over: Partial<JobFiles>): JobFiles => ({
 	state: "running",
 	spawning: false,
 	owner: "alive",
-	label: "F932 follow-up for F780",
+	label: "live view · live-view",
+	changes: ["live-view"],
 	engine: "omp",
 	model: "pi-claude/claude-opus-5-5",
 	activity: "tool",
@@ -82,7 +83,6 @@ test("a finished job shows its end for an hour, then leaves the page", () => {
 	]);
 	assert.equal(seen({ state: "stopped", finishedAt: finishedAt - 1 }), undefined);
 	assert.equal(jobActivity(job({ state: "done", finishedAt }), NOW)?.finishedAt, new Date(finishedAt).toISOString());
-	assert.deepEqual(jobActivity(job({}), NOW)?.work, ["f932", "f780"]);
 });
 
 test("tool words name the kind of work in plain words", () => {
@@ -110,6 +110,7 @@ test("the reader reads detached and hosted job folders the same way", async () =
 	await folder("2026-10-08-f932-detached-00000001", {
 		...running,
 		engine: "pi\n",
+		"task.md": "Build it.\nChange: context/changes/live-view/\n",
 		log: "think\nbash npm test\n",
 		[session]: '{"type":"session"}\n{"type":"model_change","provider":"openai-codex","modelId":"gpt-6-sol"}\n',
 	});
@@ -127,6 +128,7 @@ test("the reader reads detached and hosted job folders the same way", async () =
 		["gone", "dead", "running a command", "", ""],
 		["hosted", "working", "running a command", "git log", "pi-claude/claude-opus-5-5"],
 	]);
+	assert.deepEqual(snapshot.jobs.find((live) => live.id.includes("detached"))?.work, ["live-view"]);
 });
 
 test("a coordinator's workers and a group's teams nest as one tree with their states counted", async () => {
@@ -157,7 +159,7 @@ test("a coordinator's workers and a group's teams nest as one tree with their st
 	];
 	const run = {
 		id: "g1",
-		feature: "spec/features/active/F929-biome",
+		feature: "context/changes/biome",
 		deadline: Date.parse("2026-10-09T09:15:00Z"),
 		teams: ["team-1", "team-2"],
 	};
@@ -171,13 +173,13 @@ test("a coordinator's workers and a group's teams nest as one tree with their st
 		w1: "c1",
 		w2: null,
 	});
-	// A group worker's label names no feature; it still works on the group's feature.
-	assert.deepEqual(snapshot.jobs.find((live) => live.id === "w1")?.work, ["f929"]);
+	// A group worker's task names no change; it still works on the group's change.
+	assert.deepEqual(snapshot.jobs.find((live) => live.id === "w1")?.work, ["biome"]);
 	assert.deepEqual(snapshot.groups, [
 		{
 			id: "g1",
-			work: ["f929"],
-			feature: "F929-biome",
+			work: ["biome"],
+			feature: "biome",
 			deadline: "2026-10-09T09:15:00.000Z",
 			teams: [
 				{ name: "team-1", jobs: ["c1", "w1"], count: { working: 1, waiting: 1 } },

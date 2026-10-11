@@ -149,10 +149,10 @@ that contract. Limen does not infer recipients from a model or display name, nor
 does it invent a bot/session field for an unknown receiver API. If another bot should
 also receive the finish, include its destination explicitly as another entry.
 
-To send a ticket finish only to that author's bots, add `LIMEN_FINISH_WEBHOOK_AUTHOR_TARGETS`
+To send a change's finish only to its author's bots, add `LIMEN_FINISH_WEBHOOK_AUTHOR_TARGETS`
 in the same private file. Keys are lowercase `@login` or `*`; values are nonempty lists of
 distinct target numbers from the configured list (single URL/AUTH is target 1).
-Spawn records the ticket creation `@login` from GitHub noreply evidence, or an unavailable
+Spawn records the change creation `@login` from GitHub noreply evidence, or an unavailable
 reason; continuations inherit that snapshot. At send time an exact login match is used
 exclusively, otherwise `*` if present, otherwise the finish is skipped. An empty or invalid
 map is not permission to broadcast: nothing is sent, and the job result is unchanged.
@@ -292,10 +292,10 @@ synthesis older than the run's start is not a step. Mid-turn tool messages and
 failed or aborted turns send nothing.
 
 The notice uses the same sender, project opt-in, and payload fields as a `done`
-job. `job` names the feature and the step, for example `F757 lead synthesis` or
-`F757 lead close`. `branch` is the lead checkout's branch. `handoff` reads
+job. `job` names the change and the step, for example `quality-scan lead synthesis` or
+`quality-scan lead close`. `branch` is the lead checkout's branch. `handoff` reads
 `Lead step done: <job>. Next step: owner decision on group/synthesis.md, or
-close the group.` (or `owner decision` after close) for every feature. It never
+close the group.` (or `owner decision` after close) for every change. It never
 says "land it".
 
 Each step sends once. A second idle turn, a pane reload, or the same synthesis
@@ -316,7 +316,7 @@ URL/AUTH pair needs no change. One event sends one ping.
 | `job.stalled` | `failed` | a detached job's tool stalls and the job ends | `stalled tool …` |
 | `job.stalled` | `stalled` | a hosted job's supervisor writes an idle, blocked, or errored advisory while the session stays open | the advisory line |
 | `job.stopped` | `stopped` | a job is stopped | the stop reason |
-| `coordinator.idle` | `idle` | a coordinator turn settles with open todos, an open goal, or a failed last turn, and no running job it owns will wake it | for example `turn ended with 2 open todos; next: Land F781` |
+| `coordinator.idle` | `idle` | a coordinator turn settles with open todos, an open goal, or a failed last turn, and no running job it owns will wake it | for example `turn ended with 2 open todos; next: Land plant-events` |
 | `coordinator.blocked` | `blocked` | a turn settles with a blocked todo or a goal out of token budget, or an `ask` waits 60 seconds | the blocker or the question |
 | `coordinator.goal-done` | `goal-done` | an omp goal becomes complete, or a turn closes every todo while no owned job runs | the goal objective, or the last done todo |
 | `coordinator.exited` | `exited` | the sweep finds a registered coordinator process gone without omp's `normal` exit | pid, exit kind, and the tool it was running |
@@ -327,15 +327,15 @@ A sample `job.failed` body:
 
 ```json
 {
-  "job": "F781 plant webhook events",
+  "job": "plant webhook events · plant-events",
   "status": "failed",
-  "branch": "limen/2026-10-05-f781-plant-webhook-events-1a2b3c4d",
+  "branch": "limen/2026-10-05-plant-events-plant-webhook-events-1a2b3c4d",
   "finishEvent": "limen-finish-<sha256>",
   "handoff": "Job failed or stopped; inspect the job record before proceeding",
   "event": "job.timed-out",
   "plant": "chilly",
-  "title": "F781 plant webhook events",
-  "jobId": "2026-10-05-f781-plant-webhook-events-1a2b3c4d",
+  "title": "plant webhook events · plant-events",
+  "jobId": "2026-10-05-plant-events-plant-webhook-events-1a2b3c4d",
   "reason": "timeout after 5400000ms"
 }
 ```
@@ -587,7 +587,7 @@ Legacy `finish-webhook-bot-turn` and local source-selection flags are ignored.
 The receiver-owned proof is finished. On the VPS, one automatic delivery to
 the first bot showed HTTP accepted with the bot turn unobserved while its export was
 held, then observed for target 1 after release, with no second send. The record
-is the [bot-turn receipt outcome](../spec/features/done/2026-09/F091-finish-job-shows-bot-turn-receipt/outcome.md).
+is the bot-turn receipt outcome, which Git history keeps from before the move to `context/`.
 Do not repeat that proof for ordinary setup.
 
 ## Checks
@@ -601,7 +601,7 @@ files: a bad credential, destination, target list or author map sends nothing,
 no run prints a secret, and the private receipt channel drops malformed and
 secret-bearing lines. `test/s7-webhooks.test.ts` runs real jobs on a throwaway
 plant: an unconfigured job sends nothing, a finished job pings only the target
-its ticket author maps to, a failed job with an empty result still sends one
+its change author maps to, a failed job with an empty result still sends one
 ping, a continuation keeps the parent's route, and the secret appears only in
 the `Authorization` header. Both answer requests from the test plant's
 intercepted transport; no real endpoint is called.

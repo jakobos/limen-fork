@@ -2,7 +2,7 @@
 
 The picture is a map a cold reader takes in at one sitting: the places a project is made of, how they connect, and later which features and journeys cross them. This file is the reusable contract between three parties: the picture worker that writes the dataset, `limen picture build` that renders it, and `limen picture tick` that decides when a refresh is worth a model call.
 
-The dataset and rendered map are local, gitignored artifacts. They are never committed or merged. The map is not a live feature list: the board owns state. The map itself does not gate land; ticket errors on changed tickets can refuse a land.
+The dataset and rendered map are local, gitignored artifacts. They are never committed or merged. The map is not a live work list: the `status` field of each change and effort owns state, and `limen board` reports it. The map itself does not gate land; errors in changed change files can refuse a land.
 
 Schema: `architecture-map/1`. It is the schema of the first dataset (Alice, 2026-10-02) plus the fields marked **new**.
 
@@ -50,23 +50,21 @@ An edge with a feature or journey at either end is dropped with a warning (`edge
 
 A trailing body line `owner: <name>`, alone on its line, is metadata, not prose.
 
-## Ticket front matter
+## Change front matter
 
-Create tickets with `limen ticket new "what becomes true" [--lane planned|active] [--touches id,id]`. It picks an F number that no lane, `limen/*` branch or job label uses, and writes a ticket that passes `limen picture build --strict` with no edit. The lane folder is the status. The board reports it.
+Create a change with `/dx-new`; dx writes `change.md` in `context/changes/<id>/`. The picture fields sit beside the dx fields in the same front matter, and dx keeps them. The `status` field is the state. `limen board` reports it.
 
-Example front matter, with a known map place:
+Example picture fields, with a known map place:
 
 ```yaml
----
 touches:
   - limen.picture.build
 opened: 2026-10-06
----
 ```
 
-Replace the date with the creation date. Omit `touches` when no place is known; never invent an id. An active ticket without touches warns. Optional one-line `needs-adam` with `needs-adam-on`, or `wrong` with `wrong-on`, needs a real `YYYY-MM-DD` date; remove both fields when resolved. A done ticket may have `landed: YYYY-MM-DD` when the landing date is known.
+Replace the date with the creation date; without `opened`, the reader uses the dx `created` date. Omit `touches` when no place is known; never invent an id. A change in `implementing` without touches warns. Optional one-line `needs-owner` with `needs-owner-on`, or `wrong` with `wrong-on`, needs a real `YYYY-MM-DD` date; remove both fields when resolved. Any change may have `landed: YYYY-MM-DD` when the landing date is known. The same fields work in `effort.md`.
 
-Run `limen picture build --strict` at the plant root, or add `--dir <plant>/.limen/picture` in a job worktree. Each `ticket.*` diagnostic names the ticket path, line and `fix:` action. An active ticket without front matter is `ticket.no-front-matter` (error). Bad fields or pairs are `ticket.bad-field` (error), and an unknown `touches` id is `ticket.unknown-touch` (error). A duplicate F number is `ticket.duplicate-id` (warning); the second folder is not shown in the picture. `limen land` and `limen ticket check` refuse a branch that adds a ticket with a used number.
+Run `limen picture build --strict` at the plant root, or add `--dir <plant>/.limen/picture` in a job worktree. Each change diagnostic names the change path, line and `fix:` action. Missing front matter, a bad field or pair, and an unknown `touches` id are errors. `limen land` and `limen change check` refuse a branch whose changed change files have an error.
 
 ## Identifiers and relations
 
@@ -87,13 +85,13 @@ A negative fact stays in prose ("The runtime does not depend on the adapter crat
 
 ## Wording
 
-Present tense, active voice, one idea per sentence, under 25 words. No contractions, no marketing words, one name for one thing. Name the owner of each authority and what a place does not own when the source says so. Never describe a wish as a fact: a landed design, a planned edge, or a rejected transport is prose with its status, not a solid edge. Cite `spec/` for intent and code for behavior. The body is the description; do not repeat the title or copy the edge list into a node.
+Present tense, active voice, one idea per sentence, under 25 words. No contractions, no marketing words, one name for one thing. Name the owner of each authority and what a place does not own when the source says so. Never describe a wish as a fact: a landed design, a planned edge, or a rejected transport is prose with its status, not a solid edge. Cite `context/` for intent and code for behavior. The body is the description; do not repeat the title or copy the edge list into a node.
 
 ## `limen picture build`
 
-Deterministic and offline. Reads the dataset, tickets, and board; writes one self-contained HTML file that works from `file://` with no network. Never calls a model. The embedded `architecture-map-model/3` keeps the map fields `project`, `nodes`, `edges`, `features` (common fields plus `touches`), `journeys` (common fields plus `steps`), and `diagnostics`. It adds `work` (ticket and board facts), `pins` (dated Changed, Wrong, Needs Adam items), and `days` (dated ticket events); `--json` writes the same model. Diagnostics (dangling edge, unknown parent, bad id, unknown touch or step, and ticket errors) are listed in the view and on stderr; `--strict` exits 1 on any error diagnostic, otherwise the map still renders. Each `sources` path that does not exist in the project root is a `source.missing` warning; it does not fail `--strict`. The header names the plant `revision` and, when the project's current `HEAD` differs, says the map is behind and names that commit.
+Deterministic and offline. Reads the dataset and the changes, efforts, and archive under `context/`; writes one self-contained HTML file that works from `file://` with no network. Never calls a model. The embedded `architecture-map-model/3` keeps the map fields `project`, `nodes`, `edges`, `features` (common fields plus `touches`), `journeys` (common fields plus `steps`), and `diagnostics`. It adds `work` (change and effort facts), `pins` (dated Changed, Wrong, Needs owner items), and `days` (dated change events); `--json` writes the same model. Diagnostics (dangling edge, unknown parent, bad id, unknown touch or step, and change errors) are listed in the view and on stderr; `--strict` exits 1 on any error diagnostic, otherwise the map still renders. Each `sources` path that does not exist in the project root is a `source.missing` warning; it does not fail `--strict`. The header names the plant `revision` and, when the project's current `HEAD` differs, says the map is behind and names that commit.
 
-The view opens on the whole plant, with its atlas beside a quiet reading column for work and dated decisions. Changed comes from known `landed` dates; Wrong and Needs Adam come from paired ticket fields. Selecting a feature or journey reveals only its named places; collapsed containers indicate where listed places sit without lighting as touches. Each place shows its body, sources, connections, and the features and journeys that name it. Journey steps keep their order and repeats. Routes such as `#plant`, `#work/f780`, `#place/<id>`, and `#day/<date>` preserve the selected item on reload. A layer opened inside another appends a `~<kind>/<id>` segment; browser Back or Esc closes one layer and a shared link restores the stack. Partial and stub places look incomplete. Map features and journeys remain overlays, never blocks or edges.
+The view opens on the whole plant, with its atlas beside a quiet reading column for work and dated decisions. Changed comes from known `landed` dates; Wrong and Needs owner come from paired change fields. Selecting a feature or journey reveals only its named places; collapsed containers indicate where listed places sit without lighting as touches. Each place shows its body, sources, connections, and the features and journeys that name it. Journey steps keep their order and repeats. Routes such as `#plant`, `#work/<change-id>`, `#place/<id>`, and `#day/<date>` preserve the selected item on reload. A layer opened inside another appends a `~<kind>/<id>` segment; browser Back or Esc closes one layer and a shared link restores the stack. Partial and stub places look incomplete. Map features and journeys remain overlays, never blocks or edges.
 
 ## `limen picture tick`
 
@@ -101,8 +99,8 @@ One pass, started by the project's watch when its top branch moves, or by a coor
 
 1. No plant file or no `revision`: print one line saying the first picture starts by hand. Never spawn. The initial map is a coordinator decision.
 2. `revision` equals `HEAD`: silent. `--dry-run` prints one line that the map is current.
-3. Diff `revision..HEAD` by path and status. Drop the dataset directory, `spec/`, `docs/`, `.agents/`, and root-level `*.md` first; dropped paths never count, even when cited. A remaining path is relevant when it was added, deleted, or renamed, or when it was modified and a `sources` entry of the plant, a module, an edge, a feature, or a journey names it exactly or as a directory prefix.
-4. Nothing relevant: silent. No model call. `--dry-run` prints one line that no relevant change happened. Spec-only, docs-only, and picture-only changes end here; a change to the board (`spec/build.md`) or a feature folder never starts a refresh.
+3. Diff `revision..HEAD` by path and status. Drop the dataset directory, `context/`, `docs/`, `.agents/`, and root-level `*.md` first; dropped paths never count, even when cited. A remaining path is relevant when it was added, deleted, or renamed, or when it was modified and a `sources` entry of the plant, a module, an edge, a feature, or a journey names it exactly or as a directory prefix.
+4. Nothing relevant: silent. No model call. `--dry-run` prints one line that no relevant change happened. Context-only, docs-only, and picture-only changes end here; a change file under `context/` never starts a refresh.
 5. Another live pass holds `tick.lock`: one line, no spawn. A lock whose process is gone is taken over.
 6. `job` names a live job, or a job whose recorded base is `HEAD`: one line, no spawn. One tip is attempted once.
 7. Engine, provider, model, or reasoning flag missing: one line naming the relevant paths, no spawn. There is no package fallback model for the watcher.

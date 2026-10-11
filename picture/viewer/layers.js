@@ -2,7 +2,7 @@
    The URL holds the whole stack: base ('~' kind '/' id)*. The base belongs to viewer.js.
    One open is one history entry, so browser Back and Esc both close the top layer.
    A context switch (previous or next item) replaces the top entry and adds none.
-   Layer bodies render from the embedded model (architecture-map-model/3).
+   Layer bodies render from the embedded model (architecture-map-model/4).
    viewer.js calls PictureLayers.init({ model, onChange }) once after its first render. */
 (() => {
 	"use strict";
@@ -17,7 +17,7 @@
 		journey: ["journey", "journeys"],
 	};
 	const LANES = { planned: "Planned", active: "Active", done: "Done", dropped: "Dropped" };
-	const DAY_KINDS = { opened: "Opened", landed: "Landed", "needs-adam": "Needs Adam", wrong: "Wrong" };
+	const DAY_KINDS = { opened: "Opened", landed: "Landed", "needs-owner": "Needs owner", wrong: "Wrong" };
 	const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 	const esc = (s) =>
 		String(s ?? "").replace(
@@ -66,10 +66,9 @@
 	const join = (base, layers) => base + layers.map((layer) => `~${layer.kind}/${enc(layer.id)}`).join("");
 
 	/* Model lookups. A place is a child node or a top module with no children; a module is a top node. */
-	const ticketNumber = (w) => Number(String(w.code ?? "").replace(/\D/g, "")) || 0;
 	function lanesOf(work) {
 		const lanes = new Map();
-		for (const w of [...work].sort((a, b) => ticketNumber(b) - ticketNumber(a))) {
+		for (const w of [...work].sort((a, b) => String(b.opened ?? "").localeCompare(String(a.opened ?? "")))) {
 			if (!lanes.has(w.lane)) {
 				lanes.set(w.lane, []);
 			}
@@ -118,7 +117,7 @@
 		}
 		return null;
 	}
-	// Context switch siblings. Work: the same lane, newest ticket first, like the decide column. Map features, places,
+	// Context switch siblings. Work: the same lane, newest change first, like the decide column. Map features, places,
 	// modules and journeys: model order, as the atlas lists them. Days: newest first, as the model lists them.
 	function siblings(layer) {
 		if (layer.kind === "work") {
@@ -186,9 +185,6 @@
 	const touching = (ids) => [...index.work.values()].filter((w) => (w.touches ?? []).some((t) => ids.includes(t)));
 	const featuresTouching = (ids) =>
 		[...index.features.values()].filter((f) => (f.touches ?? []).some((t) => ids.includes(t)));
-	// "PARKED · PLANNED" reads "Parked · planned"; "PROVEN · PROVEN" reads "Proven".
-	const boardText = (b) =>
-		word(b.section) === word(b.state) || !b.state ? capital(b.section) : `${capital(b.section)} · ${word(b.state)}`;
 	// Journey bodies list one sentence per step; show it under the step when the counts agree.
 	function stepNotes(j) {
 		if (!j.bodyHtml || typeof document === "undefined") {
@@ -204,9 +200,9 @@
 	function renderWork(w) {
 		const touchNote =
 			w.touchSource === "map"
-				? "The ticket names no places; these come from the map."
+				? "The change names no places; these come from the map."
 				: w.touchSource === "none"
-					? "The ticket names no places yet."
+					? "The change names no places yet."
 					: "";
 		const days = (index.model.days ?? []).flatMap((d) =>
 			(d.items ?? [])
@@ -216,27 +212,26 @@
 		const places = (w.touches ?? []).map(
 			(id) => `${nodeLink(id)}${meta(index.nodes.get(id) ? moduleTitle(index.nodes.get(id)) : "")}`,
 		);
-		const flags = [w.needsAdam ? "Needs Adam" : "", w.wrong ? "Wrong" : ""].filter(Boolean).join(" · ");
+		const flags = [w.needsOwner ? "Needs owner" : "", w.wrong ? "Wrong" : ""].filter(Boolean).join(" · ");
 		return {
-			eyebrow: [w.code ? `Feature ${w.code}` : "Feature", LANES[w.lane] ?? capital(w.lane), flags]
+			eyebrow: [w.code ? `Change ${w.code}` : "Change", LANES[w.lane] ?? capital(w.lane), flags]
 				.filter(Boolean)
 				.join(" · "),
 			title: w.title || w.code || w.id,
 			html:
-				(w.needsAdam ? flag("needs", "Needs Adam", w.needsAdam.on, w.needsAdam.ask) : "") +
+				(w.needsOwner ? flag("needs", "Needs owner", w.needsOwner.on, w.needsOwner.ask) : "") +
 				(w.wrong ? flag("wrong", "Wrong", w.wrong.on, w.wrong.problem) : "") +
-				(w.outcome ? `<p class="layer-lead">${esc(w.outcome)}</p>` : "") +
 				facts([
-					["On the board", w.board?.section ? esc(boardText(w.board)) : ""],
+					["Status", w.status ? esc(w.status) : ""],
 					["Opened", w.opened ? esc(date(w.opened)) : ""],
 					["Landed", w.landed ? esc(date(w.landed)) : ""],
-					["Ticket", w.path ? `<code>${esc(w.path)}</code>` : ""],
+					["Change", w.path ? `<code>${esc(w.path)}</code>` : ""],
 				]) +
 				section(
 					"Places it touches",
 					places.length
 						? (touchNote ? `<p class="layer-note">${esc(touchNote)}</p>` : "") + list(places)
-						: `<p class="layer-note">${esc(touchNote || "The ticket names no places yet.")}</p>`,
+						: `<p class="layer-note">${esc(touchNote || "The change names no places yet.")}</p>`,
 				) +
 				section("Map feature", w.mapFeature && index.features.has(w.mapFeature) ? list([workLink(w.mapFeature)]) : "") +
 				section("Days", list(days)),
@@ -250,7 +245,7 @@
 			html:
 				(f.summary ? `<p class="layer-lead">${esc(f.summary)}</p>` : "") +
 				section("Places it touches", list((f.touches ?? []).map((id) => nodeLink(id)))) +
-				section("Tickets", list(work)),
+				section("Changes", list(work)),
 		};
 	}
 	function renderPlace(n) {
@@ -293,9 +288,9 @@
 		};
 	}
 	function renderDay(d) {
-		// Opened and Landed items carry the ticket title, which the link already shows; Needs Adam and Wrong carry the ask or problem.
+		// Opened and Landed items carry the change title, which the link already shows; Needs owner and Wrong carry the ask or problem.
 		const line = (item) =>
-			`<span class="layer-kind ${esc(item.kind)}">${esc(DAY_KINDS[item.kind] ?? item.kind)}</span> ${workLink(item.work)}${item.kind === "needs-adam" || item.kind === "wrong" ? meta(item.text) : ""}`;
+			`<span class="layer-kind ${esc(item.kind)}">${esc(DAY_KINDS[item.kind] ?? item.kind)}</span> ${workLink(item.work)}${item.kind === "needs-owner" || item.kind === "wrong" ? meta(item.text) : ""}`;
 		return {
 			eyebrow: "Day",
 			title: date(d.date),

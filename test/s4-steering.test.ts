@@ -24,7 +24,7 @@ import {
 const PACKAGE = fileURLToPath(new URL("..", import.meta.url));
 const FLAGS = ["--engine", "pi", "--detached"];
 // One marker per guidance source; the checks never read product wording.
-const STYLE = "style-marker-s4";
+const STANDARDS = "standards-marker-s4";
 const REGISTER = "register-marker-s4";
 const VISION = "vision-marker-s4";
 const BOARD = "board-body-marker-s4";
@@ -36,15 +36,16 @@ let second = "";
 before(async () => {
 	p = await plant();
 	const files: Record<string, string> = {
-		".agents/limen/styleguide.md": `# Styleguide\n\n${STYLE}\n`,
+		"context/standards/global/limen-code.md": `# Code\n\n${STANDARDS}\n`,
 		".agents/limen/communication.md": `# Communication\n\n${REGISTER}\n`,
-		"spec/vision.md": `# Vision\n\n${VISION}\n`,
-		"spec/build.md": `# Build\n\n## NOW\n\n- ${BOARD}\n`,
+		"context/foundation/vision.md": `# Vision\n\n${VISION}\n`,
+		"context/changes/x/change.md": `---\nchange_id: x\ntitle: ${BOARD}\nstatus: new\n---\n`,
 		// Copies an old `limen init` planted next to the stub; vanilla Pi loads every .ts in these folders.
 		".pi/extensions/limen-communication.ts": `export { default } from ${JSON.stringify(join(PACKAGE, "hook/communication.ts"))};\n`,
 		".omp/extensions/limen-steering.ts": `export { default } from ${JSON.stringify(join(PACKAGE, "hook/steering.ts"))};\n`,
 	};
 	for (const [path, text] of Object.entries(files)) {
+		mkdirSync(join(p.root, path, ".."), { recursive: true });
 		writeFileSync(join(p.root, path), text);
 	}
 	git(p.root, "add", "-A");
@@ -87,7 +88,7 @@ test("a second init removes old hook copies, so a coordinator gets each guidance
 	child.once("exit", resolve);
 	assert.equal(await promise, 0);
 	const system = readFileSync(join(coord, "fake-system.txt"), "utf8");
-	assert.equal(count(system, STYLE), 1, "styleguide");
+	assert.equal(count(system, STANDARDS), 1, "standards");
 	assert.equal(count(system, REGISTER), 1, "register");
 	assert.equal(count(system, VISION), 1, "vision");
 	assert.equal(count(system, BOARD), 1, "board");
@@ -96,7 +97,7 @@ test("a second init removes old hook copies, so a coordinator gets each guidance
 });
 
 test("a running worker gets each steer once and in order; an ended one refuses a late steer and writes nothing", async () => {
-	parent = spawnJob(p, "block", [...FLAGS, "--extension", first]);
+	parent = spawnJob(p, "block\nChange: context/changes/x/", [...FLAGS, "--extension", first]);
 	const dir = jobDir(p, parent);
 	await until(dir, () => existsSync(join(dir, "fake-blocked-1")));
 	for (const [index, text] of ["one", "two"].entries()) {
@@ -116,15 +117,16 @@ test("a running worker gets each steer once and in order; an ended one refuses a
 	assert.equal(jobFile(p, parent, "state"), "done");
 });
 
-test("a worker prompt carries register and styleguide once, vision and board pointers, and no board body", () => {
+test("a worker prompt carries register and standards once, change and vision pointers, and no board body", () => {
 	const system = jobFile(p, parent, "fake-system.txt");
 	const context = jobFile(p, parent, "fake-context.txt");
-	assert.equal(count(system, STYLE), 1, "styleguide");
+	assert.equal(count(system, STANDARDS), 1, "standards");
 	assert.equal(count(system, REGISTER), 1, "register");
-	assert.ok(context.includes("`spec/vision.md`"), "vision pointer");
-	assert.ok(context.includes("`spec/build.md`"), "board pointer");
+	assert.ok(context.includes("Change: context/changes/x/"), "change pointer");
+	assert.ok(context.includes("`context/foundation/vision.md`"), "vision pointer");
 	assert.equal(count(system + context, VISION), 0, "a worker reads the vision itself");
 	assert.equal(count(system + context, BOARD), 0, "a worker never gets the board body");
+	assert.ok(system.includes("- canPush: deny (role ceiling)"), "the permissions block, with the worker ceiling");
 	assert.equal(count(argv(parent).join(" "), "hook/steering.ts"), 1);
 	assert.equal(count(argv(parent).join(" "), "hook/communication.ts"), 1);
 });

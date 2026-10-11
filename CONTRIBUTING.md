@@ -19,14 +19,15 @@ Where code lives:
 - `src/main.ts` — CLI entry; `src/commands/` — one file per verb
 - `src/job/` — the job record: its model, lookup, rendering, and `record.ts`, which owns state files and finalization
 - `src/runtime/` — starting and supervising an engine: launch profiles, stream parsing, the detached runner, the hosted supervisor, process containment, stall detection, reaping, recovery
-- `src/project/` — the project around jobs: Git and worktrees, template inheritance, the seat registry
+- `src/project/` — the project around jobs: Git and worktrees, change files and the derived board, template inheritance, the seat registry
 - `src/integrations/` — systems outside files and Git: Herdr, the GitHub doorbell, finish webhooks and their receipts
 - `hook/` — only the extensions Pi and OMP load by path (`wake`, `communication`, `steering`, `hosted`). Installed project stubs and job launches name these paths; do not move them
 
 - Capability — start, wait, stop, observe — belongs in `src/`
 - Operating advice belongs in `templates/`
 - Behavior incidents should normally change templates, not add guards
-- Project context belongs in the package communication hook: stable guidance (shop manual, speech register, the `jg` search rule when Jevgrep is installed, vision, styleguide, board digest) rides the system prompt; a short per-turn cue names the audience; tool results recall the rule that applies; inherit package defaults when project files are absent; bound injected text; leftover-copy drift stays an advisory
+- Project context belongs in the package communication hook: stable guidance (shop manual, speech register, the `jg` search rule when Jevgrep is installed, vision, global standards, and for the coordinator the working rules and the derived board) rides the system prompt; a short per-turn cue names the audience; tool results recall the rule that applies; inherit package defaults when project files are absent; bound injected text; leftover-copy drift stays an advisory
+- Change state belongs to dx and the change files under `context/`. Limen reads `status` and front matter; it never parses prose or keeps a second board
 
 Only impossible mechanics should error. Everything else informs. Migration is the exception where safety requires a complete read-only preflight: any legacy live job, handshake, type mismatch, or old/new path conflict must fail before the first write.
 

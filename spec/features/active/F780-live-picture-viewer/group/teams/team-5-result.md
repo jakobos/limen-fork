@@ -1,7 +1,0 @@
-# Team 5 · Navigation and links QA
-
-The live picture from the lead's integrated candidate `a4e7d25` opened all 563 model-derived hash routes after a reload. The headless sweep inspected 45,032 rendered in-page links; layer depths 1–3, Back, Esc, trail jumps, arrow switches, filter and Tab focus, 700 px page-position restoration, and 1440/1240/900 px viewports all passed with zero failures. Command, exact output and reproducible setup are in `group/qa/results.md`; the script is `group/qa/sweep.mjs` (Team 5 tip before this handoff: `5c3e56c`).
-
-A real focus failure on build #1 left `BODY` active after a restored stack closed; Team 4 fixed it in `1ff1c4f`. The regression check failed before that fix and passed on the final integration build. Team 5 independently built the plant with `--strict` from lead tip `a4e7d25`; it exited 0 with four existing `source.missing` map-citation warnings, then the independently built page passed the same 563-route sweep. Headless screenshots at 1440, 1240 and 900 px and a settled two-layer view are in `group/shots/team-5/`.
-
-Browser-check once reported that its hidden preview changed desktop focus from 1Password to Helium. I closed that session, stopped using it, and notified the lead; the final screenshots came from headless Playwright. If the lead changes `picture/viewer/` or model inputs after candidate `a4e7d25`, rerun the sweep against the newly generated HTML and JSON before landing.

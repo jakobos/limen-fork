@@ -5,13 +5,13 @@
 	let RAW = null;
 	let D, P, M, W, J, Y, TABS, workAt, jAt, lastYear;
 	const GROUPS = [
-		["needs", "Needs Adam", "Decide here first"],
+		["needs", "Needs owner", "Decide here first"],
 		["wrong", "Wrong", "Problems to fix"],
-		["active", "In progress", "Active tickets, newest first"],
+		["active", "In progress", "Changes being built, newest first"],
 		["planned", "Planned", "Written, not started"],
 		["done", "Landed", "Newest first"],
 		["dropped", "Dropped", "Stopped on purpose"],
-		["map", "Map features", "Features the plant map describes without a ticket"],
+		["map", "Map features", "Features the plant map describes without a change"],
 	];
 	/* Without filter text, the work list hides these lanes and shows only the newest landed work. */
 	const QUIET_HIDDEN = new Set(["planned", "dropped", "map"]);
@@ -31,7 +31,7 @@
 		"December",
 	];
 	const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-	const KIND_LABEL = { opened: "Opened", landed: "Landed", "needs-adam": "Needs Adam", wrong: "Wrong" };
+	const KIND_LABEL = { opened: "Opened", landed: "Landed", "needs-owner": "Needs owner", wrong: "Wrong" };
 	const esc = (s) =>
 		String(s ?? "").replace(
 			/[&<>"']/g,
@@ -169,7 +169,7 @@
 		const endOf = (id) => placeOf(id) || modOfId(id);
 		const dates = [];
 		for (const w of model.work || []) {
-			for (const d of [w.opened, w.landed, w.needsAdam?.on, w.wrong?.on]) {
+			for (const d of [w.opened, w.landed, w.needsOwner?.on, w.wrong?.on]) {
 				if (ymd(d)) {
 					dates.push(d);
 				}
@@ -220,31 +220,23 @@
 		const features = new Map((model.features || []).map((f) => [f.id, f]));
 		const touchesOf = (ids) => [...new Set((ids || []).filter((t) => byId.has(t)).map(endOf))];
 		const TOUCH_NOTE = {
-			ticket: "Places named in the ticket.",
-			map: "Places named in the map feature record. The ticket names none.",
-			none: "Neither the ticket nor the map names a place yet.",
+			change: "Places named in the change.",
+			map: "Places named in the map feature record. The change names none.",
+			none: "Neither the change nor the map names a place yet.",
 		};
 		// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: split pending: work item adapter
 		const work = (model.work || []).map((w) => {
 			const f = w.mapFeature ? features.get(w.mapFeature) : null;
-			const group = w.needsAdam ? "needs" : w.wrong ? "wrong" : w.lane;
-			const date = w.needsAdam?.on || w.wrong?.on || w.landed || w.opened || null;
+			const group = w.needsOwner ? "needs" : w.wrong ? "wrong" : w.lane;
+			const date = w.needsOwner?.on || w.wrong?.on || w.landed || w.opened || null;
 			const evidence = [
 				{
-					title: "Ticket",
-					purpose: "The outcome, as the ticket states it.",
+					title: "Change",
+					purpose: "The change record: its title and dx status.",
 					path: w.path,
-					excerpt: w.outcome || w.purpose || "The ticket has no Outcome section.",
+					excerpt: w.title,
 				},
 			];
-			if (w.board) {
-				evidence.push({
-					title: "Board line",
-					purpose: "Where the board files this feature.",
-					path: `spec/build.md, line ${w.board.line}`,
-					excerpt: boardText(w.board),
-				});
-			}
 			if (f) {
 				evidence.push({
 					title: f.title,
@@ -259,16 +251,16 @@
 				title: w.title,
 				group,
 				lane: w.lane,
-				signal: w.needsAdam ? "needs" : w.wrong ? "wrong" : w.landed && w.landed === newestChange ? "changed" : null,
+				status: w.status,
+				signal: w.needsOwner ? "needs" : w.wrong ? "wrong" : w.landed && w.landed === newestChange ? "changed" : null,
 				iso: date,
 				date: shortDate(date),
-				board: w.board,
-				purpose: w.purpose || "",
-				outcome: w.outcome || "",
+				purpose: "",
+				outcome: "",
 				opened: w.opened,
 				landed: w.landed,
-				ask: w.needsAdam ? w.needsAdam.ask : null,
-				askOn: w.needsAdam ? w.needsAdam.on : null,
+				ask: w.needsOwner ? w.needsOwner.ask : null,
+				askOn: w.needsOwner ? w.needsOwner.on : null,
 				wrong: w.wrong ? w.wrong.problem : null,
 				wrongOn: w.wrong ? w.wrong.on : null,
 				touches: touchesOf(w.touches),
@@ -286,14 +278,13 @@
 			}
 			work.push({
 				id: f.id,
-				code: (/\((F\d+)\)\s*$/.exec(f.title) || [])[1] || "Map",
-				title: f.title.replace(/\s*\(F\d+\)\s*$/, ""),
+				code: "Map",
+				title: f.title,
 				group: "map",
 				lane: "map",
 				signal: null,
 				iso: null,
 				date: "map only",
-				board: null,
 				purpose: f.summary,
 				outcome: f.summary,
 				opened: null,
@@ -304,7 +295,7 @@
 				wrongOn: null,
 				touches: touchesOf(f.touches),
 				touchSource: "map",
-				touchNote: "Places named in the map feature record. No ticket links to it.",
+				touchNote: "Places named in the map feature record. No change links to it.",
 				partial: f.status !== "ready",
 				path: f.source,
 				evidence: [
@@ -365,7 +356,7 @@
 				title: dayTitle(d.date),
 				purpose: Object.keys(KIND_LABEL)
 					.filter((k) => count[k])
-					.map((k) => `${count[k]} ${k === "needs-adam" ? KIND_LABEL[k] : KIND_LABEL[k].toLowerCase()}`)
+					.map((k) => `${count[k]} ${k === "needs-owner" ? KIND_LABEL[k] : KIND_LABEL[k].toLowerCase()}`)
 					.join(" · "),
 				items,
 			};
@@ -374,7 +365,7 @@
 		const pins = [
 			["changed", "Changed", "Nothing landed yet."],
 			["wrong", "Wrong", "No open problem."],
-			["needs", "Needs Adam", "Nothing waits for you."],
+			["needs", "Needs owner", "Nothing waits for you."],
 		].map(([kind, label, none]) => {
 			const list = (pins3[kind] || []).filter((p) => workIds.has(p.work));
 			const p = list[0];
@@ -608,8 +599,8 @@
 			L.wires = sub(L.lit);
 			const mods = new Set(x.lit.map(modOf));
 			const by =
-				x.touchSource === "ticket"
-					? " (places named in its ticket)"
+				x.touchSource === "change"
+					? " (places named in its change)"
 					: x.touchSource === "map"
 						? " (places named in the map)"
 						: "";
@@ -978,7 +969,7 @@
 	/* Reading column */
 	function tag(x) {
 		if (x.signal === "needs") {
-			return '<span class="tag needs">Needs Adam</span>';
+			return '<span class="tag needs">Needs owner</span>';
 		}
 		if (x.signal === "wrong") {
 			return '<span class="tag wrong">Wrong</span>';
@@ -1034,19 +1025,10 @@
     <div class="blk"><h4>Journeys through this place<small>${js.length}</small></h4>${js.length ? `<div class="inl">${js.map((x) => `<a href="#journey/${esc(x.j)}/step/${x.i + 1}">${esc(J[x.j].title)} · step ${x.i + 1}</a>`).join("")}</div>` : '<p class="note">No journey passes here.</p>'}</div>
     <div class="blk"><h4>Cited files</h4><p class="note path">${p.sources.map(esc).join(" · ") || "None cited."}</p><p class="note">Map record: <span class="path">${esc(p.path)}</span></p></div>`;
 	}
-	/* "Now", or "Parked · planned" when the state adds something to the section. */
-	function boardText(b) {
-		const section = String(b.section || "").toLowerCase();
-		const state = String(b.state || "").toLowerCase();
-		const head = section.charAt(0).toUpperCase() + section.slice(1);
-		return state && state !== section ? `${head} · ${state}` : head;
-	}
 	function stateLine(w) {
 		const parts = [];
-		if (w.board) {
-			parts.push(`On the board: ${esc(boardText(w.board))}`);
-		} else if (w.group !== "map") {
-			parts.push("Not on the board");
+		if (w.status) {
+			parts.push(`Status: ${esc(w.status)}`);
 		}
 		if (w.opened) {
 			parts.push(`opened ${esc(shortDate(w.opened))}`);
@@ -1074,7 +1056,7 @@
 		const days = D.days.filter((d) => d.items.some((i) => i.work === w.id));
 		return `<div class="mid">${asLayer("work", w.id, `#work/${esc(w.id)}`)}
     ${w.wrong ? `<div class="box wrong"><b class="k">Wrong · ${esc(shortDate(w.wrongOn))}</b>${esc(w.wrong)}</div>` : ""}
-    ${w.ask ? `<div class="box needs"><b class="k">Needs Adam · ${esc(shortDate(w.askOn))}</b><p class="ask">${esc(w.ask)}</p></div>` : ""}
+    ${w.ask ? `<div class="box needs"><b class="k">Needs owner · ${esc(shortDate(w.askOn))}</b><p class="ask">${esc(w.ask)}</p></div>` : ""}
     <div class="blk"><h4>Outcome</h4><p>${esc(w.outcome || w.purpose)}</p></div>
     <div class="blk"><h4>State</h4><p>${stateLine(w)}</p></div>
     <div class="blk"><h4>Places touched<small>${w.lit.length ? `${plural(w.lit.length, "place")} · lit in the plant` : "none yet"}</small></h4><p class="note">${esc(w.touchNote)}</p>
@@ -1116,7 +1098,7 @@
 				return `<a class="ditem" data-key="go:${esc(w.id)}" href="#work/${esc(w.id)}"><b>${esc(w.code)} · ${esc(w.title)}</b>${tag(w)}<span><span class="kd">${esc(KIND_LABEL[it.kind] || it.kind)}</span>${text ? ` ${esc(text)}` : ""}</span></a>`;
 			})
 			.join("")}
-    <p class="note">Dates come from ticket front matter. A day lists what was opened, landed, asked, or found wrong on it.</p></div>`;
+    <p class="note">Dates come from change front matter. A day lists what was opened, landed, asked, or found wrong on it.</p></div>`;
 	}
 	function moduleMid(m, r) {
 		const inside = (id) => modOf(id) === m.id;
@@ -1163,19 +1145,14 @@
 					label = "Landed recently";
 					note = `The ${RECENT} newest. Type in the filter to search all.`;
 				}
-				/* Needs Adam stays visible when empty, so "nothing to decide" is said, not implied. */
+				/* Needs owner stays visible when empty, so "nothing to decide" is said, not implied. */
 				if (!ws.length && (g !== "needs" || query)) {
 					return "";
 				}
 				return `<section class="sec"><div class="sec-h"><h2>${label}<small>${ws.length}</small></h2><span>${ws.length ? note : "Nothing waits for you."}</span></div>${ws
 					.map((w) => {
 						const open = workOf(r) === w.id;
-						const meta = [
-							w.date,
-							w.code,
-							w.board ? `${boardText(w.board)} on the board` : null,
-							w.lit.length ? plural(w.lit.length, "place") : null,
-						]
+						const meta = [w.date, w.code, w.status || null, w.lit.length ? plural(w.lit.length, "place") : null]
 							.filter(Boolean)
 							.map(esc)
 							.join(" · ");
@@ -1337,7 +1314,7 @@
 			`<div class="tools"><nav class="tabs" aria-label="Lists">${TABS.map(([k, n, c]) => `<a href="#plant/${k}" aria-current="${k === t ? "page" : "false"}">${n}<small>${c}</small></a>`).join("")}</nav><input class="filter" id="filter" type="search" placeholder="Filter (press /)" value="${esc(query)}" aria-label="Filter this list"></div>` +
 			(r.view === "plant" ? `<p class="hint">${hint}</p>` : "") +
 			(sections(r) || '<p class="empty">Nothing matches this filter.</p>') +
-			`<p class="foot">Built by limen picture build from the plant map of ${esc(D.plant.date)}. Work, pins, and days come from the tickets and the board.</p>` +
+			`<p class="foot">Built by limen picture build from the plant map of ${esc(D.plant.date)}. Work, pins, and days come from the changes in context/.</p>` +
 			notesHtml()
 		);
 	}

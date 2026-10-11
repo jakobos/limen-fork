@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -7,12 +7,12 @@ import { readRun } from "../job/group-cabinet.ts";
 import { resolveJob } from "../job/lookup.ts";
 import { branchCommit, branchExists, commitHasFile, limenRoot, workspaceRepository } from "../project/git.ts";
 import { ownerAlive } from "../runtime/reap.ts";
+import { changeCheck } from "./change-check.ts";
 import { parseFlags } from "./flags.ts";
-import { landTicketCheck, TICKET_PATH } from "./land.ts";
 import { spawnCommand } from "./spawn.ts";
 
 type KeeperOptions = {
-	readonly ticket: string;
+	readonly change: string;
 	readonly jobs: readonly string[];
 	readonly candidate?: string;
 	readonly group?: string;
@@ -42,7 +42,10 @@ const FLAGS = {
 
 const ROUTE = ["engine", "provider", "model", "thinking"] as const;
 
-/** After the work: a short job on its own branch at the candidate tip fixes the ticket, board and map links. */
+/** A change, effort or archive folder; the id is the folder name without an archive date. */
+const FOLDER = /^context\/(?:changes|efforts|archive)\/(?:\d{4}-\d{2}-\d{2}-)?([a-z0-9]+(?:-[a-z0-9]+)*)\/?$/;
+
+/** After the work: a short job on its own branch at the candidate tip fixes the change folder and map links. */
 export async function keeperCommand(args: readonly string[], cwd: string): Promise<void> {
 	if (process.env.LIMEN_GROUP_ID) {
 		throw new Error(
@@ -50,9 +53,9 @@ export async function keeperCommand(args: readonly string[], cwd: string): Promi
 		);
 	}
 	const options = parseKeeperArgs(args);
-	const code = TICKET_PATH.exec(options.ticket)?.[1];
-	if (!code) {
-		throw new Error(`keeper needs a ticket path like spec/features/active/FNNN-slug/ticket.md, not ${options.ticket}`);
+	const id = FOLDER.exec(options.change)?.[1];
+	if (!id) {
+		throw new Error(`keeper needs a change folder like context/changes/ID/, not ${options.change}`);
 	}
 	const root = limenRoot(cwd);
 	const jobs = await finishedJobs(root, options);
@@ -72,26 +75,25 @@ export async function keeperCommand(args: readonly string[], cwd: string): Promi
 		throw new Error(`candidate branch ${candidate} does not exist`);
 	}
 	const tip = branchCommit(repository, candidate);
-	const ticket = ticketAtTip(repository, tip, options.ticket, code, candidate);
-	const keeperBranch = `limen/keeper-${code.toLowerCase()}-${tip.slice(0, 7)}`;
+	const change = changeAtTip(repository, tip, options.change, id, candidate);
+	const keeperBranch = `limen/keeper-${id}-${tip.slice(0, 7)}`;
 	if (branchExists(repository, keeperBranch)) {
 		throw new Error(`keeper branch ${keeperBranch} already exists; land or delete it first`);
 	}
 
-	const gate = await landTicketCheck(repository, root, candidate, "HEAD", first.id);
+	const gate = await changeCheck(repository, root, candidate, "HEAD", first.id);
 	// The fix line names limen keeper; the keeper itself must not start another one.
 	const gateLines = gate.lines.filter((line) => !line.startsWith("fix: ")).map((line) => `  ${line}`);
 	const map = `${root}/.limen/picture`;
 	const blocks = await Promise.all(jobs.map((job) => jobBlock(repository, job)));
 	const packet = [
-		`Spec keeper for ${code}. Fix the ticket, board and map links for this work; commit on this branch.`,
+		`Change keeper for ${id}. Fix the change folder and map links for this work; commit on this branch.`,
 		"",
-		`Ticket: ${ticket}`,
-		"Board: spec/build.md",
+		`Change: ${change}`,
 		`Map: ${existsSync(map) ? map : "none"}`,
 		`Group: ${options.group ?? "none"}`,
 		`Candidate: ${candidate} at ${tip}`,
-		`Changed tickets: ${gate.tickets.length > 0 ? gate.tickets.join(", ") : "none"}`,
+		`Changed folders: ${gate.folders.length > 0 ? gate.folders.join(", ") : "none"}`,
 		"Land check now:",
 		...(gate.ok && gate.lines.length === 0 ? ["no error"] : gateLines),
 		"",
@@ -105,7 +107,7 @@ export async function keeperCommand(args: readonly string[], cwd: string): Promi
 		const packetFile = `${scratch}/task.md`;
 		await writeFile(packetFile, packet);
 		const repo = first.repo ? ["--repo", first.repo] : [];
-		const label = `spec keeper · ${code}`;
+		const label = `change keeper · ${id}`;
 		await spawnCommand(
 			[
 				...options.route,
@@ -127,24 +129,24 @@ function parseKeeperArgs(args: readonly string[]): KeeperOptions {
 		unknown: (word) => `unknown keeper option ${word}`,
 		missing: (flag) => `${flag} requires a value`,
 	});
-	const [ticket, ...extra] = positionals;
-	if (!ticket || extra.length > 0) {
-		throw new Error("keeper requires exactly one <ticket-path>");
+	const [change, ...extra] = positionals;
+	if (!change || extra.length > 0) {
+		throw new Error("keeper requires exactly one <change-folder>");
 	}
 	const jobs = values.job ?? [];
 	if (jobs.length === 0 && !values.group) {
 		throw new Error("keeper requires --job ID or --group GROUP-ID");
 	}
+	// A missing model flag falls back to `.agents/limen/models.json` for the keeper role in spawn.
 	const route: string[] = [];
 	for (const name of ROUTE) {
 		const value = values[name];
-		if (!value) {
-			throw new Error(`keeper requires --engine --provider --model --thinking; missing --${name}`);
+		if (value) {
+			route.push(`--${name}`, value);
 		}
-		route.push(`--${name}`, value);
 	}
 	return {
-		ticket,
+		change,
 		jobs,
 		route,
 		timeout: values.timeout,
@@ -173,23 +175,28 @@ async function finishedJobs(root: string, options: KeeperOptions): Promise<Keepe
 	return jobs;
 }
 
-/** A ticket moved to another lane leaves its old path in the job's task. Follow the one folder with that number. */
-function ticketAtTip(repository: string, tip: string, ticket: string, code: string, candidate: string): string {
-	if (commitHasFile(repository, tip, ticket)) {
-		return ticket;
+/** A change archived on the branch leaves its old path in the job's task. Follow the one archive folder with its id. */
+function changeAtTip(repository: string, tip: string, change: string, id: string, candidate: string): string {
+	const folder = change.endsWith("/") ? change : `${change}/`;
+	if (["change.md", "effort.md"].some((name) => commitHasFile(repository, tip, `${folder}${name}`))) {
+		return folder;
 	}
-	const tree = execFileSync("git", ["ls-tree", "-r", "--name-only", tip, "--", "spec/features"], {
+	// A tip with no archive folder lists nothing.
+	const tree = spawnSync("git", ["ls-tree", "-d", "--name-only", `${tip}:context/archive`], {
 		cwd: repository,
 		encoding: "utf8",
 		maxBuffer: 64 * 1024 * 1024,
-	});
-	const moved = tree.split("\n").filter((path) => TICKET_PATH.exec(path)?.[1] === code);
+	}).stdout;
+	const moved = tree
+		.split("\n")
+		.filter((name) => name.replace(/^\d{4}-\d{2}-\d{2}-/, "") === id)
+		.map((name) => `context/archive/${name}/`);
 	const [only] = moved;
 	if (moved.length !== 1 || !only) {
-		const found = moved.length > 0 ? `; ${code} is at ${moved.join(", ")}` : "";
-		throw new Error(`ticket ${ticket} is missing at ${candidate} (${tip.slice(0, 7)})${found}`);
+		const found = moved.length > 0 ? `; ${id} is at ${moved.join(", ")}` : "";
+		throw new Error(`change ${folder} is missing at ${candidate} (${tip.slice(0, 7)})${found}`);
 	}
-	console.log(`ticket moved: ${ticket} -> ${only}`);
+	console.log(`change moved: ${folder} -> ${only}`);
 	return only;
 }
 

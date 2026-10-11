@@ -20,8 +20,9 @@ import {
 import { acceptBatch, acceptTransport, groupEvents, publishEvent, syncLifecycle } from "../job/group-events.ts";
 import { parseDuration, SESSION_ID } from "../job/job.ts";
 import { cleanWorktree, commitHasFile, headCommit, repoRoot } from "../project/git.ts";
+import { resolveModels } from "../project/models.ts";
 import { type PlanningSource, planningSource, privatePlanningFile } from "../project/planning.ts";
-import { type EngineProfile, preflightEngine, resolveSpawnEngine } from "../runtime/engine.ts";
+import { type EngineProfile, engineProfile, preflightEngine } from "../runtime/engine.ts";
 import { normalizeWorkerExtensions } from "../runtime/worker-extensions.ts";
 import { parseFlags } from "./flags.ts";
 import { spawnCommand } from "./spawn.ts";
@@ -171,7 +172,7 @@ export async function startGroup(args: readonly string[], cwd: string): Promise<
 	const featureArgument = args[0];
 	if (!featureArgument || featureArgument.startsWith("--")) {
 		throw new Error(
-			"group start has no feature directory; run limen group start spec/features/active/FEATURE with the settings in docs/groups.md",
+			"group start has no change folder; run limen group start context/changes/ID with the settings in docs/groups.md",
 		);
 	}
 	const options = parseGroupStartArgs(args);
@@ -180,7 +181,7 @@ export async function startGroup(args: readonly string[], cwd: string): Promise<
 	const feature = groupFeature(root, cwd, featureArgument);
 	const source = await groupPlanningSource(root, feature, featureArgument, options.newRun);
 	const lead = await liveGroupLead(root);
-	const settings = groupSettings(options);
+	const settings = groupSettings(root, options);
 	await checkGroupPacket(root, feature, settings.teams, source);
 	const activated = await activateGroup(root, cwd, { feature, source, lead, settings, options });
 	if (activated.created) {
@@ -190,9 +191,9 @@ export async function startGroup(args: readonly string[], cwd: string): Promise<
 }
 function groupFeature(root: string, cwd: string, featureArgument: string): string {
 	const feature = relative(root, resolve(cwd, featureArgument));
-	if (feature.startsWith("..") || !feature.startsWith("spec/features/")) {
+	if (!/^context\/(?:changes|efforts)\/[a-z0-9]+(?:-[a-z0-9]+)*$/.test(feature)) {
 		throw new Error(
-			"feature must be inside this repository's spec/features; run limen group start spec/features/active/FEATURE with the group settings",
+			"group start needs a change or effort folder in this repository; run limen group start context/changes/ID with the group settings",
 		);
 	}
 	return feature;
@@ -208,7 +209,7 @@ async function groupPlanningSource(
 	const source = priorRun ? (priorRun.planningSource ?? "committed") : planningSource(root);
 	if (source === "private" && featureArgument.split(/[\\/]/).includes("..")) {
 		throw new Error(
-			"private planning feature path must not contain '..'; run limen group start spec/features/active/FEATURE from the project root",
+			"private planning change path must not contain '..'; run limen group start context/changes/ID from the project root",
 		);
 	}
 	return source;
@@ -247,7 +248,7 @@ function groupCount(flags: ReadonlyMap<string, string>, key: string): number {
 	return Number(value);
 }
 /** The roster, deadlines, engine route and reasoning levels, checked in the order a missing setting is reported. */
-function groupSettings({ flags, teamModels, mode }: GroupStartOptions): GroupSettings {
+function groupSettings(root: string, { flags, teamModels, mode }: GroupStartOptions): GroupSettings {
 	const teams = Array.from({ length: groupCount(flags, "--teams") }, (_, index) => `team-${index + 1}`);
 	for (const team of Object.keys(teamModels)) {
 		if (!teams.includes(team)) {
@@ -259,11 +260,16 @@ function groupSettings({ flags, teamModels, mode }: GroupStartOptions): GroupSet
 	const workersPerTeam = groupCount(flags, "--workers-per-team");
 	const timeout = parseDuration(groupSetting(flags, "--timeout"));
 	const workerTimeoutMs = parseDuration(groupSetting(flags, "--worker-timeout"));
-	const profile = resolveSpawnEngine(groupSetting(flags, "--engine"));
-	const provider = groupSetting(flags, "--provider");
-	const model = groupSetting(flags, "--model");
-	const thinking = groupSetting(flags, "--thinking");
-	const workerThinking = groupSetting(flags, "--worker-thinking");
+	// Leads and team coordinators take the coordinator role's models.json entry; workers take the worker role's reasoning.
+	const lead = resolveModels(root, "coordinator", {
+		engine: flags.get("--engine"),
+		provider: flags.get("--provider"),
+		model: flags.get("--model"),
+		thinking: flags.get("--thinking"),
+	});
+	const profile = engineProfile(lead.values.engine);
+	const { provider, model, thinking } = lead.values;
+	const workerThinking = resolveModels(root, "worker", { thinking: flags.get("--worker-thinking") }).values.thinking;
 	for (const level of [thinking, workerThinking]) {
 		if (!["off", "minimal", "low", "medium", "high", "xhigh"].includes(level)) {
 			throw new Error(
@@ -291,7 +297,7 @@ async function checkGroupPacket(
 	source: PlanningSource,
 ): Promise<void> {
 	for (const path of [
-		`${feature}/ticket.md`,
+		`${feature}/${feature.startsWith("context/efforts/") ? "effort" : "change"}.md`,
 		`${feature}/group/brief.md`,
 		...teams.map((team) => `${feature}/group/teams/${team}.md`),
 	]) {
@@ -401,16 +407,15 @@ function newGroupRun(
 }
 /** One coordinator job per team of a new run. A failed launch is recorded and ends the start. */
 async function spawnTeamCoordinators(root: string, run: GroupRun): Promise<void> {
-	const ticket = run.planningSource === "private" ? `${root}/${run.feature}/ticket.md` : `${run.feature}/ticket.md`;
-	const featureName = run.feature.split("/").at(-1) ?? run.feature;
-	const featureLabel = /^F\d+/i.exec(featureName)?.[0]?.toUpperCase() ?? featureName;
+	const change = run.planningSource === "private" ? `${root}/${run.feature}/` : `${run.feature}/`;
+	const id = run.feature.split("/").at(-1) ?? run.feature;
 	for (const team of run.teams) {
 		try {
 			await spawnCommand(
 				[
-					`Pursue the feature with your team. Ticket: ${ticket}`,
+					`Pursue the change with your team. Change: ${change}`,
 					"--label",
-					`${team} coordinator · ${featureLabel}`,
+					`${team} coordinator · ${id}`,
 					"--engine",
 					run.engine,
 					"--provider",

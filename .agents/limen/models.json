@@ -1,0 +1,9 @@
+{
+	"default": { "engine": "omp", "provider": "anthropic", "model": "claude-sonnet-4-6", "thinking": "high" },
+	"roles": {
+		"coordinator": { "provider": "anthropic", "model": "claude-opus-5-5", "thinking": "high" },
+		"researcher": { "provider": "google-antigravity", "model": "gemini-2.5-flash", "thinking": "xhigh" },
+		"quality": { "provider": "google-antigravity", "model": "gemini-2.5-flash", "thinking": "xhigh" },
+		"scout": { "provider": "anthropic", "model": "claude-haiku-5-5", "thinking": "medium" }
+	}
+}

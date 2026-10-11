@@ -24,20 +24,12 @@
 		);
 	const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
-	/* Work as the reading column names it: tickets by id, and map features no ticket links, by their code. */
+	/* Work as the reading column names it: changes by id. */
 	const model = JSON.parse(data.textContent);
 	const parentOf = new Map((model.nodes || []).map((n) => [n.id, n.parent || null]));
 	const WORK = new Map();
 	for (const w of model.work || []) {
 		WORK.set(w.id, { id: w.id, code: w.code, title: w.title, touches: w.touches || [] });
-	}
-	const linked = new Set((model.work || []).map((w) => w.mapFeature).filter(Boolean));
-	for (const f of model.features || []) {
-		const code = /\((F\d+)\)\s*$/.exec(f.title || "")?.[1];
-		if (code && !linked.has(f.id) && !WORK.has(code.toLowerCase())) {
-			const title = f.title.replace(/\s*\(F\d+\)\s*$/, "");
-			WORK.set(code.toLowerCase(), { id: f.id, code, title, touches: f.touches || [] });
-		}
 	}
 
 	let jobs = [];
@@ -160,7 +152,7 @@
 		const end = j.finishedAt || j.lastEventAt;
 		return `ran ${length(Date.parse(end) - Date.parse(j.startedAt))} · ended ${age(end)} ago`;
 	}
-	/* The feature code names the work; the job's own label, without its F numbers, tells two jobs on one feature apart. */
+	/* The change id names the work; the job's own label, without its change ids, tells two jobs on one change apart. */
 	function whatHtml(j, inWork) {
 		const [w, ...more] = worksOf(j);
 		if (!w || inWork) {
@@ -168,7 +160,7 @@
 		}
 		const extra = more.length ? ` <small>+ ${more.map((x) => esc(x.code)).join(", ")}</small>` : "";
 		const own = String(j.label || "")
-			.replace(/\bF\d+\b/gi, " ")
+			.replace(/\s·\s+[a-z0-9]+(?:-[a-z0-9]+)*(?:\s+[a-z0-9]+(?:-[a-z0-9]+)*)?\s*$/, " ")
 			.replace(/^[\s·:—-]+|[\s·:—-]+$/g, "")
 			.replace(/\s+/g, " ");
 		return `<b>${esc(w.code)}</b> ${esc(own || w.title)}${extra}`;

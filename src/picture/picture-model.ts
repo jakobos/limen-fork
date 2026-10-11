@@ -93,20 +93,18 @@ interface PictureJourney {
 	steps: string[];
 }
 
+/** One change or effort in the picture: `code` is its id and `lane` groups its dx status (see LANES). */
 export interface PictureWork {
 	id: string;
 	code: string;
-	slug: string;
 	title: string;
 	lane: string;
-	board: BoardEntry | null;
-	purpose: string;
-	outcome: string;
+	status: string;
 	touches: string[];
-	touchSource: "ticket" | "map" | "none";
+	touchSource: "change" | "map" | "none";
 	opened: string | null;
 	landed: string | null;
-	needsAdam: { ask: string; on: string } | null;
+	needsOwner: { ask: string; on: string } | null;
 	wrong: { problem: string; on: string } | null;
 	path: string;
 	mapFeature: string | null;
@@ -121,7 +119,7 @@ export interface PicturePin {
 
 export interface PictureDay {
 	date: string;
-	items: { work: string; kind: "opened" | "landed" | "needs-adam" | "wrong"; text: string }[];
+	items: { work: string; kind: "opened" | "landed" | "needs-owner" | "wrong"; text: string }[];
 }
 export interface PictureModel {
 	schema: string;
@@ -154,13 +152,25 @@ export interface PictureModel {
 // A missing child file is a gap; nothing is invented.
 
 import { basename } from "node:path";
-import type { BoardEntry } from "./board.ts";
+import { type ChangeRecord, checkTouches, identityPath } from "../project/changes.ts";
 import { parseFrontmatter } from "./frontmatter.ts";
 import { inlineText, proseBlocks, renderMarkdown } from "./markdown.ts";
-import { checkTickets, type TicketRecord } from "./tickets.ts";
 
 export const INPUT_SCHEMA = "architecture-map/1";
-export const MODEL_SCHEMA = "architecture-map-model/3";
+export const MODEL_SCHEMA = "architecture-map-model/4";
+/** The viewer's work lanes for each dx status of a change or an effort; any other status reads as planned. */
+const LANES: Readonly<Record<string, string>> = {
+	new: "planned",
+	planned: "planned",
+	scoped: "planned",
+	implementing: "active",
+	implemented: "active",
+	reviewed: "active",
+	"in-progress": "active",
+	done: "done",
+	archived: "done",
+	dropped: "dropped",
+};
 export const KINDS = ["plant", "module", "edge", "feature", "journey"];
 export const RELATIONS = ["depends-on", "hosts", "calls", "implements", "generates", "reads", "writes", "composes"];
 export const STATUSES = ["ready", "partial", "stub"];
@@ -197,14 +207,12 @@ export function buildModel({
 	diagnostics = [],
 	now,
 	exists,
-	tickets = [],
-	board,
+	changes = [],
 }: {
 	files: readonly PictureFile[];
 	diagnostics?: readonly Diagnostic[];
 	now?: Date;
-	tickets?: readonly TicketRecord[];
-	board?: ReadonlyMap<string, BoardEntry>;
+	changes?: readonly ChangeRecord[];
 	/** Answers whether a cited path exists under the project root; when omitted, sources are not checked. */
 	exists?: ((path: string) => boolean) | undefined;
 }): PictureModel {
@@ -289,8 +297,8 @@ export function buildModel({
 	);
 	const modules = new Set(records.filter((r) => r.kind === "module").map((r) => r.id));
 	const places = new Set([...modules, ...plantIds]);
-	if (tickets.length) {
-		diags.push(...checkTickets(tickets, places));
+	if (changes.length) {
+		diags.push(...checkTouches(changes, places));
 	}
 	const featureModels: PictureFeature[] = features.map((r) => ({
 		id: r.id,
@@ -322,27 +330,24 @@ export function buildModel({
 	for (const node of ordered) {
 		topModule.set(node.id, node.parent ? (topModule.get(node.parent) ?? node.parent) : node.id);
 	}
-	const work: PictureWork[] = [...tickets]
+	const work: PictureWork[] = [...changes]
 		.sort((a, b) => cmp(a.id, b.id) || cmp(a.path, b.path))
-		.map((ticket) => {
-			const feature = featureById.get(`limen.feature.${ticket.id}`);
-			const touches = ticket.touches.length ? ticket.touches.filter((id) => places.has(id)) : (feature?.touches ?? []);
+		.map((change) => {
+			const feature = featureById.get(`limen.feature.${change.id}`);
+			const touches = change.touches.length ? change.touches.filter((id) => places.has(id)) : (feature?.touches ?? []);
 			return {
-				id: ticket.id,
-				code: ticket.code,
-				slug: ticket.slug,
-				title: ticket.title,
-				lane: ticket.lane,
-				board: board?.get(ticket.id) ?? null,
-				purpose: ticket.purpose,
-				outcome: ticket.outcome,
+				id: change.id,
+				code: change.id,
+				title: change.title,
+				lane: LANES[change.status] ?? "planned",
+				status: change.status,
 				touches,
-				touchSource: ticket.touches.length ? "ticket" : feature?.touches.length ? "map" : "none",
-				opened: ticket.opened,
-				landed: ticket.landed,
-				needsAdam: ticket.needsAdam,
-				wrong: ticket.wrong,
-				path: ticket.path,
+				touchSource: change.touches.length ? "change" : feature?.touches.length ? "map" : "none",
+				opened: change.opened ?? null,
+				landed: change.landed ?? null,
+				needsOwner: change.needsOwner ?? null,
+				wrong: change.wrong ?? null,
+				path: identityPath(change),
 				mapFeature: feature?.id ?? null,
 			};
 		});
@@ -377,9 +382,9 @@ export function buildModel({
 			pins.wrong.push({ work: item.id, date: item.wrong.on, text: item.wrong.problem, scope });
 			addDay(item.wrong.on, { work: item.id, kind: "wrong", text: item.wrong.problem });
 		}
-		if (item.needsAdam) {
-			pins.needs.push({ work: item.id, date: item.needsAdam.on, text: item.needsAdam.ask, scope });
-			addDay(item.needsAdam.on, { work: item.id, kind: "needs-adam", text: item.needsAdam.ask });
+		if (item.needsOwner) {
+			pins.needs.push({ work: item.id, date: item.needsOwner.on, text: item.needsOwner.ask, scope });
+			addDay(item.needsOwner.on, { work: item.id, kind: "needs-owner", text: item.needsOwner.ask });
 		}
 	}
 	const newest = (a: PicturePin, b: PicturePin): number => cmp(b.date, a.date) || cmp(a.work, b.work);

@@ -26,32 +26,32 @@ Module cards and band places wrap into rows with a minimum readable width. On a 
 
 Pins, places, modules, work, journeys, and days open larger as layers over the page. An item opened inside a layer stacks one more layer. The trail above the layers names each one and jumps to any of them. Esc and browser Back close the top layer; the Left and Right arrow keys move the top layer to the previous or next item of the same kind. The URL holds the whole stack, so a reload or a shared link opens the same layers.
 
-**Map features are not the live work list.** They show where specified features cross the code, not their state. The board (`spec/build.md`) owns feature state. The live picture also reads tickets and the board to show current work.
+**Map features are not the live work list.** They show where specified features cross the code, not their state. The `status` field of each change and effort owns state, and `limen board` reports it. The live picture also reads the changes, efforts, and archive under `context/` to show current work.
 
-Ticket dates show when work opened or landed; a dated **Needs Adam** request or **Wrong** problem appears as a pin. Ticket `touches` link the work to exact map places; a place with no evidence stays unlinked.
+Change dates show when work opened or landed; a dated **Needs owner** request or **Wrong** problem appears as a pin. A change's `touches` link the work to exact map places; a place with no evidence stays unlinked.
 
-Make a ticket with `limen ticket new "what becomes true" [--lane planned|active] [--touches id,id]`. It takes an F number that no lane (dated done and dropped folders included), no local `limen/*` branch and no job label uses. It writes the ticket under `spec/features/<lane>/` and prints its path. The default lane is planned. Only pass `--touches` for module or plant ids you verified in the map's `nodes/` files; omit it when no place is known.
+Create a change with `/dx-new` in the coordinator. Then add the picture fields to the front matter of its `change.md`: `opened`, and `touches` only for module or plant ids you verified in the map's `nodes/` files; omit `touches` when no place is known. dx keeps these fields.
 
-The scaffold writes `opened` and a valid front matter block. For later dated decisions, use `needs-adam` with `needs-adam-on` or `wrong` with `wrong-on`; remove each pair when resolved. Add `landed` to done tickets with a known date. The [ticket contract](../templates/picture/CONTRACT.md#ticket-front-matter) has an example. A missing front matter block on an active ticket, a bad date, an incomplete pair, or an unknown place id is an error. A missing `touches` list on an active ticket or a duplicate F number warns. Every `ticket.*` message names the path, line and `fix:` action.
+For later dated decisions, use `needs-owner` with `needs-owner-on` or `wrong` with `wrong-on`; remove each pair when resolved. Add `landed` when the landing date is known; without `opened`, the dx `created` date counts. The [change contract](../templates/picture/CONTRACT.md#change-front-matter) has an example. A bad date, an incomplete pair, or an unknown place id is an error. A change in `implementing` without `touches` warns. Every change message names the path, line and `fix:` action.
 
-In a job worktree, the map is not in the branch. It stays in the plant root. Check the worktree ticket against that map without replacing its rendered page:
+In a job worktree, the map is not in the branch. It stays in the plant root. Check the worktree change files against that map without replacing its rendered page:
 
 ```sh
 limen picture build --dir "$LIMEN_CONTEXT_ROOT/.limen/picture" --out /tmp/check.html --strict
 ```
 
-The strict check exits 1 for ticket errors. It warns, but does not guess a link, when an active ticket has no known `touches`.
+The strict check exits 1 for change errors. It warns, but does not guess a link, when a change in `implementing` has no known `touches`.
 
-Remove a Needs Adam request and its date after Adam answers. Remove a Wrong problem and its date after the fix. The pin then leaves the page.
+Remove a Needs owner request and its date after the owner answers. Remove a Wrong problem and its date after the fix. The pin then leaves the page.
 
 ## Live job activity
 
-`limen picture serve` serves the same page on `http://127.0.0.1:4747/` (`--port` picks another port; `--dir` another dataset). It reads the job folders in `.limen/jobs/` once a second and pushes changes to the open page over Server-Sent Events. It never changes a job, and it listens only on 127.0.0.1. Ctrl-C stops it. A reload rebuilds the page from the current tickets and board.
+`limen picture serve` serves the same page on `http://127.0.0.1:4747/` (`--port` picks another port; `--dir` another dataset). It reads the job folders in `.limen/jobs/` once a second and pushes changes to the open page over Server-Sent Events. It never changes a job, and it listens only on 127.0.0.1. Ctrl-C stops it. A reload rebuilds the page from the current change files.
 
 The page then shows a live strip with each job, the feature it names, and what it does now: thinking, editing files, reading code, running tests and checks, running a command, running helpers, or waiting. Each line names the engine and model and the time since the last event. The places a running job's feature touches carry a mark, and the feature's detail lists its jobs.
 
 - **Same for both engines:** OMP and Pi jobs, detached and hosted, write the same job files (`activity`, `last-tool`, `tool-calls`, `log`). The model comes from the `model_change` entry of the job's session file.
-- **Feature link:** a job belongs to each F number in its label or job id. A job that names no feature on the page appears only in the strip.
+- **Change link:** a job belongs to each change its `Change:` line names. A job that names no change on the page appears only in the strip.
 - **Never a false running:** a job whose record says running but whose owner process is gone reads **not responding**. A job with no event for five minutes reads **quiet**, with its last action.
 - **Finished jobs:** done, failed, and stopped jobs stay for one hour after they end.
 
@@ -75,7 +75,7 @@ After that, `limen picture tick --engine E --provider P --model M --thinking T` 
 - files were added, deleted, or renamed, or
 - a source that the map cites changed. A source that only a feature or a journey cites counts too.
 
-Changes to specs, docs, or the map only print nothing and cost nothing. So a change to the board only (`spec/build.md`) never refreshes the map. The tick tries each tip one time. `--dry-run` prints the decision in one line, also when the map is current or nothing relevant changed.
+Changes to `context/`, docs, or the map only print nothing and cost nothing. So a change file move, such as an archive, never refreshes the map. The tick tries each tip one time. `--dry-run` prints the decision in one line, also when the map is current or nothing relevant changed.
 
 ## Map watch
 

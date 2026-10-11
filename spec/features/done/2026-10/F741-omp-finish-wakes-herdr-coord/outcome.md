@@ -1,3 +1,0 @@
-# Outcome
-
-A job that ends now wakes the Herdr coordinator that started it, also when that coordinator runs OMP. Limen sends `herdr agent prompt` to the recorded coordinator pane and records the turn Herdr observes. Under `LIMEN_COORDINATOR=1`, `limen wait` refuses instead of blocking the pane. The code landed on `main` as `39ec81b`. Two live hosted OMP proofs (2026-10-02 and 2026-10-03) recorded an observed turn about 0.4 s after finish, and the second one shows the coordinator acting on the wake; details are in `checks.md`. The finish webhook stays an opt-in side channel and is not counted as a coordinator wake.
