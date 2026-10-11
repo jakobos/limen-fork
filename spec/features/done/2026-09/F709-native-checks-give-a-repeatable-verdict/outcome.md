@@ -1,3 +1,0 @@
-# Outcome
-
-The VPS now has a clean native-verification result after two test-only fixture corrections, landed in merge `2181d35a3972914dbd31000703eb77f93fe0845b`. Registry stress keeps every operation and dead-lock round with fewer Node launches, while the fake Herdr no longer repeats its startup delay during completion probes. The repaired candidate passed TypeScript, Biome and all 370 native tests; earlier failed lanes and the corrected focused evidence remain retained in `checks-1.md` and `checks-2.md`. Production behavior, existing test timeouts and the warm-sweep performance assertions are unchanged. Narrow 1.0 remains NO-GO pending actual Johnny held/released receiver evidence, unusable-route refusal and Adam's review.

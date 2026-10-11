@@ -41,23 +41,25 @@ cd /path/to/your-project
 limen init
 ```
 
-Before you assign work, define these two files:
+`limen init` installs the dx skills into `.agents/skills/dx-*/` (with `skills-lock.json`) and creates the `context/` tree. Before you assign work, define these files:
 
-- `spec/vision.md`: what the product should do, for whom, and within what scope.
-- `.agents/limen/styleguide.md`: how to write and organize the code.
+- `context/foundation/vision.md`: what the product should do, for whom, and within what scope.
+- `context/standards/global/*.md`: how to write and organize the code. dx ships starting standards; on an existing codebase, run `/dx-standards-discover`.
 
 Start Pi in that directory with `pi`, or open an agent tab in Herdr with the project as its working directory. Describe the task to the agent in plain language, for example:
 
-> Add a settings page. Follow the project vision and coding styleguide.
+> Add a settings page. Follow the project vision and coding standards.
 
-You can also ask the agent to help define the vision and styleguide before it changes code. Set the worker and reviewer model choices with the agent in `spec/build.md` (see [Models](#models)).
+The coordinator turns the request into a change with `/dx-new`, `/dx-frame`, and `/dx-plan`. You can also ask it to help define the vision and standards before it changes code. Set the worker and reviewer model choices with the agent in `.agents/limen/models.json` (see [Models](#models)).
 
 ### What `limen init` does
 
-- **Project files:** It creates the files that the project owns: the vision, the board, the feature lanes, and the styleguide (see [Project files](#project-files)). It does not overwrite existing project files.
-- **Hook stubs:** It creates package-hook stubs in `.pi/extensions/` and `.omp/extensions/`. A Herdr OMP coordinator needs the `.omp` stub for communication, wake, and steering, so in an existing project, run `limen init` again before you start one.
+- **dx skills:** It runs `npx skills add dikamilo/dx-workflow --skill '*' -a universal -y --copy`, unless `skills-lock.json` already lists them, and warns about each dx skill the role prompts name that is missing. `limen init --update-dx` updates the skills and adds new standards and review policies.
+- **Context scaffold:** It creates `context/` by the `dx-init` rules: `foundation/`, `standards/`, `changes/`, `efforts/`, `archive/`, `config/`, the dx block in `AGENTS.md` or `CLAUDE.md`, and the `.gitignore` lines for `.worktrees/` and `.limen/`.
+- **Project files:** It creates `context/foundation/vision.md`, `.agents/limen/models.json`, and `.agents/limen/working-rules.md` (see [Project files](#project-files)). It does not overwrite existing project files, and it does not commit.
+- **Hook stubs:** It creates package-hook stubs in `.pi/extensions/` and `.omp/extensions/`, and replaces a stub that differs from the package template. A Herdr OMP coordinator needs the `.omp` stub for communication, wake, and steering, so in an existing project, run `limen init` again before you start one.
 - **Old hook copies:** It deletes old `limen-*.ts` hook copies in both extension directories, so that they cannot load next to the stubs.
-- **Leftover prompts:** `limen init --drop-leftovers` deletes only prompt copies that are still the same as the package.
+- **Leftover prompts:** `limen init --drop-leftovers` deletes only prompt copies that are still the same as the package, including a root `AGENTS.md` that is an old Limen manual.
 
 ### The coordinator session
 
@@ -73,7 +75,7 @@ The agent you talk to is the coordinator. Give it the task in plain language. It
 - Use a Herdr space with the name of the plant (`limen`, or `alice limen`). Do not use a space with the name `workers` only.
 - The coordinator gives its own tab the name of one stable subject (`chat settings`). Limen adds ` · N running` to that name while its jobs run.
 - Worker tabs get their names from spawn labels (see [Job IDs and labels](jobs.md#job-ids-and-labels)).
-- The inherited shop manual (`templates/agents.md`) has the same layout rules. A project `AGENTS.md` replaces it.
+- The inherited shop manual (`templates/agents.md`) has the same layout rules. A project `.agents/limen/agents.md` replaces it.
 
 ### Project skills
 
@@ -94,11 +96,11 @@ The next launch finds new or changed old skills, so the plant needs no links tha
 
 Use this reference when you need to set model choices or run commands yourself.
 
-Project choices are in `spec/build.md`. The board records the engine, provider, model, and reasoning level for each role, and who reviews. The coordinator reads those choices and passes them to the CLI as command flags. The CLI selects settings from flags, environment variables, and package defaults. A newer explicit instruction from the owner has priority over the board. Replace the placeholders in the commands with the project choices.
+Project choices are in two files. `.agents/limen/models.json` records the engine, provider, model, and reasoning level for each role. `.agents/limen/working-rules.md` records who reviews and the quota policy. The coordinator reads those choices and passes them to the CLI as command flags. The CLI selects settings from flags, environment variables, and package defaults. A newer explicit instruction from the owner has priority over the files. Replace the placeholders in the commands with the project choices.
 
 ### Package fallbacks
 
-The coordinator must pass the board choices explicitly. Package fallbacks apply when command flags and environment variables do not select a setting.
+The coordinator must pass the project choices explicitly. Package fallbacks apply when command flags and environment variables do not select a setting.
 
 **Engine.** `--engine pi|omp` selects the job binary. The order of priority is:
 
@@ -154,7 +156,8 @@ For an ordinary worker:
 ```bash
 limen spawn --engine <engine> \
   --provider <provider> --model <model> --thinking <level> \
-  --label "what this changes · FNNN" 'Implement FNNN: <outcome>. Ticket: spec/features/active/FNNN-slug/ticket.md'
+  --label "what this changes · <change-id>" \
+  'Implement <change-id>: run /dx-implement --manual until ## Progress is done. Change: context/changes/<change-id>/'
 ```
 
 In Herdr, this job is hosted. Use `--detached` when someone asks for a background worker. In both modes, `--provider`, `--model`, and `--thinking` go to the selected engine as separate flag and value pairs. `limen continue` accepts the same flags.
@@ -164,30 +167,36 @@ In Herdr, this job is hosted. Use `--detached` when someone asks for a backgroun
 A parent directory that is not a Git repository can hold several independent Git repositories as children.
 
 1. Run `limen workspace init` one time in the parent.
-2. List the children in `spec/workspace.md`.
+2. List the children in `.agents/limen/workspace.md`.
 3. Tell the coordinator which repository the work is for.
 
-The coordinator gives exactly one `--repo` to each job. Tickets stay in the parent. Branches, worktrees, diffs, and review stay in the selected child.
+The coordinator gives exactly one `--repo` to each job. Each child keeps its own `context/` and its changes. Branches, worktrees, diffs, and review stay in the selected child.
 
 ## Project files
 
 The installed `limen` package supplies the default shop manual, role prompts, speech register, and hooks. `limen init` creates only the files that the project owns:
 
 ```text
-.agents/limen/styleguide.md           project coding practice
-spec/vision.md                        durable product intent
-spec/build.md                         TRACK / NOW / NEXT / PROVEN
-spec/features/                        planned, active, done, and dropped work
+context/foundation/vision.md          durable product intent
+context/standards/global/*.md         project coding practice
+context/changes/<id>/                 one change: change.md, frame.md, plan.md, reviews/
+context/efforts/<id>/                 a larger effort: effort.md, roadmap.md
+context/archive/<date>-<id>/          archived and dropped work
+.agents/skills/dx-*/                  dx skills, with skills-lock.json
+.agents/limen/models.json             engine, provider, model, reasoning per role
+.agents/limen/working-rules.md        review ownership and quota policy
 .pi/extensions/limen.ts               Pi stub: load hooks from the package
 .omp/extensions/limen.ts              OMP stub: load the same hooks
 .limen/jobs/<id>/                     runtime evidence
 ```
 
+There is no board file. `limen board` derives NOW, NEXT, and RECENT from the change and effort files and the job records.
+
 ### Overlays
 
 Optional overlays replace a package default, one file at a time:
 
-- `AGENTS.md`
+- `.agents/limen/agents.md`
 - `.agents/limen/worker.md`
 - `.agents/limen/reviewer.md`
 - `.agents/limen/communication.md`
@@ -199,6 +208,6 @@ Optional overlays replace a package default, one file at a time:
 
 ### Hooks
 
-The communication hook puts the shop manual, the speech register, the vision, and the styleguide in the system prompt for each model call. The board digest comes last, so a change to NOW or NEXT does not break the cached prefix.
+The communication hook puts the shop manual, the speech register, the vision, and the global standards in the system prompt for each model call. For the coordinator, `working-rules.md` and the derived board come last, so a change to NOW or NEXT does not break the cached prefix.
 
 A short note on each turn names the audience and the reply rules. The wake cue is in that note, not in the system prompt. After a write or an edit, the tool result repeats the rule that applies.

@@ -51,7 +51,7 @@ limen open <id|suffix|label>
 - `Needs a decision` (failed or stopped jobs with commits that are not landed)
 - coordinator tabs
 
-Open groups replace individual member candidates with one line: `group <feature>: N member branches; the lead decides (limen group status <id>)`. Closed groups leave the inbox. Work outside groups keeps its ordinary candidate or decision row.
+Open groups replace individual member candidates with one line: `group <change>: N member branches; the lead decides (limen group status <id>)`. Closed groups leave the inbox. Work outside groups keeps its ordinary candidate or decision row.
 
 In a terminal, `jobs` shows an aligned table for people. Through a pipe, it prints the compact format that tools read. `LIMEN_VIEW=human|compact` selects a view. `NO_COLOR` removes the color.
 
@@ -74,23 +74,29 @@ limen unwatch <id|suffix|label> | --all
 
 ### Land and clean up
 
-Merge a job, close the Herdr tabs of a feature, and remove finished worktrees or records.
+Merge a job, close the Herdr tabs of a change, and remove finished worktrees or records.
 
 ```text
 limen land <id|suffix|label> [--onto BRANCH] [--yes]
-limen close <FNNN>
+limen close <change-id>
 limen prune [--retire [--dry-run]]
 ```
 
 `land` merges into the checkout of the plant even when another session has uncommitted files there. It leaves those files as they are. It refuses when a file the merge would change has uncommitted edits, or when the index holds staged changes. A merge that fails beside uncommitted files is aborted, so the checkout returns to its earlier state.
 
-### Tickets
+### Changes
 
-Show who first added a ticket.
+Changes are created and closed with dx skills in the coordinator: `/dx-new`, `/dx-frame`, `/dx-plan`, `/dx-archive`. Limen reads them, checks them, and drops them.
 
 ```text
-limen ticket-author <ticket-path>
+limen board                                    # NOW / NEXT / RECENT from change and effort files and job records
+limen drop <id> "reason"                       # status: dropped, reason in ## Notes, move to context/archive/
+limen change check [BRANCH]                    # the land check on the change files BRANCH adds or changes
+limen change-author <path>                     # who first added a change folder, change.md, or effort.md
+limen keeper <context/changes/<id>/> (--job ID ... | --group GROUP-ID) [--candidate BRANCH] --engine E --provider P --model M --thinking T
 ```
+
+`drop` refuses while a live job names the change. For an effort, it drops each child change that is not closed.
 
 ### Map build and refresh
 
@@ -107,7 +113,7 @@ limen picture tick --engine E --provider P --model M --thinking T [--dir D] [--b
 Start a team group, and show the status of, publish, wait for, stop, or close it.
 
 ```text
-limen group start FEATURE --teams N --workers-per-team N --timeout D --worker-timeout D --engine E --provider P --model M --thinking T --worker-thinking T [--team-model team-N=provider/model] [--extension PATH ...] [--team-extension team-N=PATH ...] [--detached|--tab] [--new-run]
+limen group start context/changes/<id> --teams N --workers-per-team N --timeout D --worker-timeout D --engine E --provider P --model M --thinking T --worker-thinking T [--team-model team-N=provider/model] [--extension PATH ...] [--team-extension team-N=PATH ...] [--detached|--tab] [--new-run]
 limen group status [GROUP-ID] [--json]
 limen group publish [GROUP-ID] [--team team-N] "finding"
 limen group wait [GROUP-ID] [--timeout D]
@@ -132,10 +138,11 @@ You run these one time for each project or seat, or a scheduler runs them.
 
 ### Project setup
 
-Create the project files, set up a parent workspace for child repositories, or choose where group planning files live. `limen init` ends with a `next:` line that names the next step, and says so when the repository has no commit yet.
+Install the dx skills and create the project files, set up a parent workspace for child repositories, or choose where planning files live. `limen init` ends with a `next:` line that names the next step, and says so when the repository has no commit yet.
 
 ```text
 limen init
+limen init --update-dx
 limen init --drop-leftovers
 limen workspace init
 limen planning [committed|private]

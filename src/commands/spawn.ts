@@ -1,7 +1,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
-import { basename, dirname, resolve } from "node:path";
+import { basename, dirname, isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { captureFinishAuthor, finishWebhookEnv } from "../integrations/finish-webhook.ts";
 import { herdrAvailable, herdrBinary, openHostedTab, openWatchTab } from "../integrations/herdr.ts";
@@ -26,12 +26,12 @@ import {
 	worktreeForBranch,
 } from "../project/git.ts";
 import {
+	changePointers,
 	inheritedPlanning,
 	type PlanningSource,
 	planningSource,
 	privatePlanningFile,
 	privatePlanningTask,
-	ticketPointers,
 } from "../project/planning.ts";
 import { signalProcessGroup, waitForProcessGroup } from "../runtime/contain.ts";
 import {
@@ -298,7 +298,7 @@ async function spawnTaskText(
 	const { root, source } = place;
 	let task = loaded.text;
 	if (!loaded.raw && place.workspace) {
-		task = workspaceTask(loaded.text, root, repoFlag ?? "");
+		task = workspaceTask(loaded.text, repoFlag ?? "");
 	}
 	// Private planning: check every pointer now, before a job record or worktree exists.
 	let privatePacket = "";
@@ -306,10 +306,10 @@ async function spawnTaskText(
 		task = await privatePlanningTask(root, task);
 		if (group) {
 			const feature = group.run.feature;
-			const ticket = await privatePlanningFile(root, `${feature}/ticket.md`);
+			const change = await privatePlanningTask(root, `Change: ${feature}/`);
 			const brief = await privatePlanningFile(root, `${feature}/group/brief.md`);
 			const note = await privatePlanningFile(root, `${feature}/group/teams/${group.team}.md`);
-			privatePacket = `Ticket: ${ticket}\nBrief: ${brief}\nApproach note: ${note}`;
+			privatePacket = `${change}\nBrief: ${brief}\nApproach note: ${note}`;
 		}
 	}
 	return { task, privatePacket };
@@ -343,7 +343,7 @@ async function recordSpawnedJob(launch: SpawnLaunch): Promise<void> {
 	}
 	const baseCommit = plan.kind === "add-new" ? spawnBaseCommit(repository) : branchCommit(repository, branch);
 	if (source === "committed") {
-		assertTicketsAtBase(repository, baseCommit, task);
+		assertChangesAtBase(repository, baseCommit, task);
 	}
 	const member = group ? await claimMember(group.run, group.team, group.role, id) : undefined;
 	await noteRunningJobs(jobsRoot, options.label);
@@ -355,14 +355,15 @@ async function recordSpawnedJob(launch: SpawnLaunch): Promise<void> {
 	const worktree = await createJobWorktree(launch, jobDir, plan);
 	await launchSpawnedJob(launch, { jobDir, id, root, worktree, preamble, role, memberDeadline: member?.deadline });
 }
-function assertTicketsAtBase(repository: string, baseCommit: string, task: string): void {
-	for (const { path } of ticketPointers(task)) {
-		if (path.startsWith("spec/") && !commitHasFile(repository, baseCommit, path)) {
-			throw new Error(`ticket ${path} is missing from the base commit`);
+/** Each relative `Change:` folder holds its change.md or effort.md in the commit the worktree starts from. */
+function assertChangesAtBase(repository: string, baseCommit: string, task: string): void {
+	for (const { path, kind } of changePointers(task)) {
+		if (!isAbsolute(path) && !commitHasFile(repository, baseCommit, `${path}${kind}.md`)) {
+			throw new Error(`change ${path}${kind}.md is missing from the base commit; commit it before spawning`);
 		}
 	}
 }
-/** Says how many jobs already run, and warns about a bare feature-number label or a label a live job holds. */
+/** Says how many jobs already run, and warns about a label a live job holds. */
 async function noteRunningJobs(jobsRoot: string, label: string): Promise<void> {
 	let running = 0;
 	let held = false;
@@ -378,9 +379,6 @@ async function noteRunningJobs(jobsRoot: string, label: string): Promise<void> {
 	if (running > 0) {
 		console.log(`note: ${running} job${running === 1 ? "" : "s"} already running; starting another`);
 	}
-	if (/^F\d{3,}$/i.test(label)) {
-		console.log("warning: label is only a feature number");
-	}
 	if (held) {
 		console.log("warning: a live job already holds this label");
 	}
@@ -391,7 +389,7 @@ async function jobTaskBody(
 	member: GroupMember | undefined,
 ): Promise<string | Uint8Array> {
 	const { task, loaded, group, place } = launch;
-	// Private planning may rewrite ticket pointers, so its task is the checked text, not the raw bytes.
+	// Private planning may rewrite change pointers, so its task is the checked text, not the raw bytes.
 	let taskBody: string | Uint8Array = `${task.trim()}\n`;
 	if (loaded.raw && place.source === "committed") {
 		taskBody = loaded.bytes;
@@ -424,7 +422,7 @@ async function publishSpawnedJob(launch: SpawnLaunch, record: SpawnRecord): Prom
 		planningSource: place.source,
 		finishAuthor: captureFinishAuthor(cwd, launch.loaded.text, Boolean(place.workspace)),
 		...(place.repo ? { repo: place.repo } : {}),
-		...(launch.hosted ? { agentName: hostedAgentName(record.id) } : {}),
+		...(launch.hosted ? { agentName: hostedAgentName(record.id, launch.options.label) } : {}),
 		...(!group && notificationSession ? { notificationSession } : {}),
 		...(coordinatorTab ? { originTab: coordinatorTab } : {}),
 		...(coordinatorPane ? { originPane: coordinatorPane } : {}),
@@ -546,7 +544,7 @@ export async function startHosted(input: {
 	readonly thinking?: string;
 	readonly continueFile?: string;
 }): Promise<void> {
-	const agentName = hostedAgentName(input.id);
+	const agentName = hostedAgentName(input.id, input.label);
 	const group = (await text(`${input.jobDir}/group`)) || "";
 	const team = (await text(`${input.jobDir}/team`)) || "";
 	try {
@@ -806,14 +804,8 @@ export async function capturedVersions(profile: EngineProfile): Promise<string> 
 	const hunkVersion = hunk && (await probeVersion(hunk));
 	return `${profile.id} ${version}\n${herdrVersion ? `herdr ${herdrVersion}\n` : ""}${hunkVersion ? `hunk ${hunkVersion}\n` : ""}`;
 }
-function workspaceTask(task: string, root: string, repo: string): string {
-	let rewritten = task;
-	for (const { pointer, path } of ticketPointers(task)) {
-		if (path.startsWith("spec/")) {
-			rewritten = rewritten.replace(pointer, pointer.replace(path, `${root}/${path}`));
-		}
-	}
-	return `Repository: ${repo}. Work only in this repository.\n\n${rewritten}`;
+function workspaceTask(task: string, repo: string): string {
+	return `Repository: ${repo}. Work only in this repository.\n\n${task}`;
 }
 export function normalizeLabel(value: string): string {
 	const label = value.trim();

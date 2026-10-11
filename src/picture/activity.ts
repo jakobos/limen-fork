@@ -3,6 +3,7 @@ import { basename, dirname, join } from "node:path";
 import type { GroupRun } from "../job/group-cabinet.ts";
 import { isTerminal } from "../job/job.ts";
 import { textFile } from "../job/record.ts";
+import { changePointers } from "../project/planning.ts";
 import { processAlive } from "../runtime/contain.ts";
 import { ownerAlive, startingJob } from "../runtime/reap.ts";
 
@@ -10,8 +11,8 @@ export type LiveState = "starting" | "working" | "waiting" | "quiet" | "dead" | 
 export type LiveJob = {
 	readonly id: string;
 	readonly label: string;
-	/** Picture work ids the label or id names, lowercase: `f932`. A label can name two features. A group member also
-	 * works on its group's feature, whatever its coordinator named it. */
+	/** Picture work ids: the change ids the job's task names with `Change:` pointers. A group member also works on its
+	 * group's change, whatever its coordinator named it. */
 	readonly work: readonly string[];
 	readonly engine: string;
 	readonly model: string;
@@ -54,6 +55,8 @@ export type JobFiles = {
 	readonly spawning: boolean;
 	readonly owner: "alive" | "gone" | "none";
 	readonly label: string;
+	/** Change ids from the task's `Change:` pointers. */
+	readonly changes: readonly string[];
 	readonly engine: string;
 	readonly model: string;
 	readonly activity: string;
@@ -99,7 +102,7 @@ export function jobActivity(files: JobFiles, now: number): LiveJob | undefined {
 	return {
 		id: files.id,
 		label: files.label || files.id,
-		work: namedWork(files.label, files.id),
+		work: files.changes,
 		engine: files.engine,
 		model: files.model,
 		state,
@@ -191,10 +194,6 @@ export function toolWords(tool: string, detail: string): string {
 	return words ?? (name ? `using ${name}` : "using a tool");
 }
 
-export function namedWork(label: string, id: string): string[] {
-	return [...new Set(`${label}\n${id}`.match(/\bF\d+\b/gi)?.map((feature) => feature.toLowerCase()))];
-}
-
 /** Reads every job folder below `jobsRoot`. Keeps what never changes between reads: owner checks, models, long-finished jobs. */
 export function activityReader(jobsRoot: string): (now?: number) => Promise<LiveSnapshot> {
 	const owners = new Map<string, boolean>();
@@ -232,7 +231,7 @@ function linkJobs(jobs: readonly LiveJob[], runs: readonly GroupRecord[]): LiveJ
 	const coordinators = new Map<string, string>();
 	const features = new Map<string, string[]>();
 	for (const run of runs) {
-		features.set(run.id, namedWork(basename(run.feature), ""));
+		features.set(run.id, [basename(run.feature)]);
 		for (const member of run.members) {
 			if (member.role === "coordinator" && shown.has(member.id)) {
 				coordinators.set(`${run.id}/${member.team}`, member.id);
@@ -265,7 +264,7 @@ function groupTrees(jobs: readonly LiveJob[], runs: readonly GroupRecord[]): Liv
 		return [
 			{
 				id: run.id,
-				work: namedWork(feature, ""),
+				work: [feature],
 				feature,
 				deadline: new Date(run.deadline).toISOString(),
 				teams,
@@ -332,6 +331,7 @@ async function readJobFiles(
 			.split(" ")
 			.map(field),
 	);
+	const changes = changePointers(await field("task.md")).map((pointer) => pointer.id);
 	const session = await sessionFile(dir);
 	const [eventAt, stateAt] = await Promise.all([
 		newestChange([join(dir, "activity"), join(dir, "log"), ...(session ? [session] : [])]),
@@ -345,6 +345,7 @@ async function readJobFiles(
 		spawning: state === "" && (await startingJob(dir)),
 		owner: state === "running" ? await ownerState(dir, id, owners) : "none",
 		label,
+		changes,
 		engine,
 		model: await sessionModel(id, session, models),
 		activity,

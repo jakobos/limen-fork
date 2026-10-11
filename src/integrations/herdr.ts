@@ -3,7 +3,8 @@ import { existsSync, realpathSync } from "node:fs";
 import { appendFile, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { basename } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { closedFeatures, closedJobFeatures } from "../job/job.ts";
+import { closedJobChanges } from "../job/job.ts";
+import { closedChanges } from "../project/changes.ts";
 import { ENGINES, type EngineId, engineProfile } from "../runtime/engine.ts";
 
 export type HerdrPlace = {
@@ -561,14 +562,14 @@ export async function openJobPlace(input: {
 	return `opened ${label}`;
 }
 
-export async function closeFeatureTabs(input: { readonly root: string; readonly feature: string }): Promise<string> {
-	const feature = /(?:^|\/)(F\d+)/i.exec(input.feature.trim())?.[1]?.toUpperCase();
-	if (!feature) {
-		throw new Error("close requires a feature like F012");
+export async function closeChangeTabs(input: { readonly root: string; readonly change: string }): Promise<string> {
+	const change = /(?:^|\/)([a-z0-9]+(?:-[a-z0-9]+)*)\/?$/.exec(input.change.trim())?.[1];
+	if (!change) {
+		throw new Error("close requires a change id like oauth-login");
 	}
-	const closedSet = closedFeatures(input.root);
-	if (!closedSet.has(feature)) {
-		throw new Error(`${feature} is not in done/ or dropped/; leftover tabs stay`);
+	const closedSet = closedChanges(input.root);
+	if (!closedSet.has(change)) {
+		throw new Error(`${change} is not archived or dropped; leftover tabs stay`);
 	}
 	const herdr = herdrBinary();
 	if (!herdr) {
@@ -582,7 +583,7 @@ export async function closeFeatureTabs(input: { readonly root: string; readonly 
 			continue;
 		}
 		const jobDir = `${input.root}/.limen/jobs/${entry.name}`;
-		if (!closedJobFeatures(await text(`${jobDir}/label`), entry.name, closedSet).includes(feature)) {
+		if (!closedJobChanges(await text(`${jobDir}/task.md`), closedSet).includes(change)) {
 			continue;
 		}
 		const places = await Promise.all([readPlace(jobDir), readPlace(jobDir, "diff")]);
@@ -598,7 +599,7 @@ export async function closeFeatureTabs(input: { readonly root: string; readonly 
 			}
 		}
 	}
-	return `closed ${closed} leftover tab${closed === 1 ? "" : "s"} for ${feature}`;
+	return `closed ${closed} leftover tab${closed === 1 ? "" : "s"} for ${change}`;
 }
 
 async function createTab(input: {

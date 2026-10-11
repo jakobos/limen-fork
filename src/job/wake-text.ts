@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { ticketPointers } from "../project/planning.ts";
+import { changePointers } from "../project/planning.ts";
 import { producedNothing } from "./job.ts";
 
 function text(path: string): string {
@@ -79,7 +79,7 @@ export function completionWake(
 	}
 	if (empty) {
 		instruction =
-			"Inspect the job record and log/session to understand why, then resume focused work if the ticket remains open. Keep the user informed; ask only when genuine product ambiguity, a scope or risk tradeoff, or an irreversible action needs a human decision.";
+			"Inspect the job record and log/session to understand why, then resume focused work if the change remains open. Keep the user informed; ask only when genuine product ambiguity, a scope or risk tradeoff, or an irreversible action needs a human decision.";
 	}
 	if (fallback) {
 		instruction =
@@ -87,14 +87,14 @@ export function completionWake(
 	}
 	return joinWake(lead, handoffExcerpt(job), [facts, handoff].filter(Boolean).join("\n\n"), instruction);
 }
-/** The done-wake sentence that sends spec work to the keeper; the ticket comes from the job task's first `Ticket:` pointer (keeper follows a moved one). */
+/** The done-wake sentence that sends change-folder work to the keeper; the folder is the task's first `Change:` pointer. */
 export function keeperHint(job: string, id: string): string {
-	// A keeper always changes a ticket; sending it to another keeper would loop.
+	// A keeper always changes a change folder; sending it to another keeper would loop.
 	if (text(join(job, "role")) === "keeper") {
-		return "This is the spec keeper: land it, since it carries the work and the spec fixes. If it made no commit, land the original job.";
+		return "This is the change keeper: land it, since it carries the work and the change-folder fixes. If it made no commit, land the original job.";
 	}
-	const ticket = ticketPointers(text(join(job, "task.md")))[0]?.path ?? "<ticket>";
-	return `If it added, moved or changed a ticket, start limen keeper ${ticket} --job ${id} --engine <engine> --provider <provider> --model <model> --thinking <level> and land the keeper job instead.`;
+	const change = changePointers(text(join(job, "task.md")))[0]?.path ?? "<context/changes/id/>";
+	return `If it added, archived or changed a change folder, start limen keeper ${change} --job ${id} --engine <engine> --provider <provider> --model <model> --thinking <level> and land the keeper job instead.`;
 }
 export type LeadFallback = {
 	readonly group: string;

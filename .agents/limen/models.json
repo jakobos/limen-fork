@@ -1,0 +1,9 @@
+{
+	"default": { "engine": "omp", "provider": "openai-codex", "model": "gpt-6.1-sol", "thinking": "high" },
+	"roles": {
+		"coordinator": { "thinking": "xhigh" },
+		"researcher": { "thinking": "xhigh" },
+		"quality": { "thinking": "xhigh" },
+		"scout": { "provider": "pi-claude", "model": "claude-haiku-5-5", "thinking": "medium" }
+	}
+}

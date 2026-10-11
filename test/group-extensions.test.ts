@@ -3,10 +3,10 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { mkdir, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import test from "node:test";
 import { type GroupRun, groupPath, readRun, saveJson } from "../src/job/group-cabinet.ts";
-import { git, jobDir, LIMEN, limen, plant, type RunOptions, TICKET, waitJob } from "./plant.ts";
+import { CHANGE, git, jobDir, LIMEN, limen, plant, type RunOptions, waitJob } from "./plant.ts";
 
 const lead = { PI_SESSION_ID: "extension-lead" };
 const route = ["--engine", "pi", "--provider", "fixture", "--model", "fixture", "--thinking", "high"];
@@ -47,7 +47,7 @@ else ok({});
 `;
 async function fixture(hosted = false) {
 	const p = await plant();
-	const feature = dirname(TICKET);
+	const feature = CHANGE.slice(0, -1);
 	await mkdir(join(p.root, feature, "group/teams"), { recursive: true });
 	for (const path of ["group/brief.md", "group/teams/team-1.md", "group/teams/team-2.md"]) {
 		await writeFile(join(p.root, feature, path), `# ${path}\n`);

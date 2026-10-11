@@ -5,23 +5,23 @@ import { existsSync } from "node:fs";
 import { appendFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { after, before, test } from "node:test";
-import { git, jobDir, jobFile, limen, type Plant, plant, release, spawnJob, TICKET, until, waitJob } from "./plant.ts";
+import { CHANGE, git, jobDir, jobFile, limen, type Plant, plant, release, spawnJob, until, waitJob } from "./plant.ts";
 
 let p: Plant;
 let main: string;
-const job: Record<"a" | "b" | "running" | "empty" | "failed" | "ticket", string> = {
+const job: Record<"a" | "b" | "running" | "empty" | "failed" | "change", string> = {
 	a: "",
 	b: "",
 	running: "",
 	empty: "",
 	failed: "",
-	ticket: "",
+	change: "",
 };
 const lines = (n: number) => "x\n".repeat(n);
 
 before(async () => {
 	p = await plant();
-	await appendFile(join(p.root, "spec/vision.md"), "\n`test/` holds at most 5 lines.\n");
+	await appendFile(join(p.root, "context/foundation/vision.md"), "\n`test/` holds at most 5 lines.\n");
 	await mkdir(join(p.root, "test"));
 	await writeFile(join(p.root, "test/old.test.ts"), lines(8));
 	git(p.root, "add", "-A");
@@ -116,16 +116,17 @@ test("an unconfirmed land, another target, a group member, a staged target and a
 	await rm(join(p.root, file));
 });
 
-test("a ticket that fails the strict check is refused with the keeper command", async () => {
-	// The job files a ticket that touches no known place.
-	job.ticket = done("commit");
-	const ticket = TICKET.replace("F001-demo", "F002-bad");
-	await amend(job.ticket, {
-		[ticket]: (await readFile(join(p.root, TICKET), "utf8")).replace("demo.place", "nope").replaceAll("F001", "F002"),
+test("a change that fails the strict check is refused with the keeper command", async () => {
+	// The job files a change that touches no known place.
+	job.change = done("commit");
+	const folder = "context/changes/bad/";
+	const text = await readFile(join(p.root, CHANGE, "change.md"), "utf8");
+	await amend(job.change, {
+		[`${folder}change.md`]: text.replace("demo.place", "nope").replace("change_id: demo", "change_id: bad"),
 	});
-	const stderr = refused(job.ticket);
-	assert.ok(stderr.includes(`${ticket}:3`), stderr);
-	assert.ok(stderr.includes(`limen keeper ${ticket} --job ${job.ticket}`), stderr);
+	const stderr = refused(job.change);
+	assert.ok(stderr.includes(`${folder}change.md:11`), stderr);
+	assert.ok(stderr.includes(`limen keeper ${folder} --job ${job.change}`), stderr);
 });
 
 test("a branch that adds test lines past the cap is refused and names the numbers", async () => {

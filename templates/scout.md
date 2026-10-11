@@ -28,6 +28,6 @@ First failure: <test file> › <test name> — <assertion line, verbatim>
 Code path: <path>:<symbol>
 Follow-on: <failures caused by the first> | none
 Independent: <other failures and their first lines> | none
-Known unstable: <test, with the outcome or board line that names it> | none
+Known unstable: <test, with the change note or lesson that names it> | none
 Command: <exact command>; exit <code>
 ```

@@ -1,6 +1,6 @@
 # Collaborative feature groups
 
-Groups are opt-in. One owner-facing lead starts a fixed roster of managed team coordinators pursuing the same feature through different approaches. Each coordinator has a total worker launch allowance. The lead remains the sole landing owner; group messages are informational data, not owner steering or permission to take over jobs.
+Groups are opt-in. One owner-facing lead starts a fixed roster of managed team coordinators pursuing the same change through different approaches. Each coordinator has a total worker launch allowance. The lead remains the sole landing owner; group messages are informational data, not owner steering or permission to take over jobs.
 
 Ordinary jobs keep their existing spawn, wake, steering and pruning behavior. A `group/` folder alone launches nothing. Groups use no runtime dependencies, database, remote transport, automatic merge, push or model fallback.
 
@@ -12,21 +12,21 @@ Do **not** `limen spawn` a hosted "lead" job for this. Hosted jobs set `LIMEN_JO
 
 The lead registration is a heartbeat, not a pid file. `hook/group-peer.ts` refreshes `.limen/group-leads/SESSION` after each delivery sweep, about once a second. `group start` refuses a registration that the hook did not refresh in the last 30 seconds. Do not write that file by hand: a pane without the hook never receives group events. When a team coordinator finishes and the lead hook is not live, Limen prompts the lead pane through Herdr with the group status and the reload hint, so the lead still learns that the team finished. With a live hook, group events carry the finish and Herdr stays quiet. The project loaders that `limen init` writes (`.omp/extensions/limen.ts`, `.pi/extensions/limen.ts`) load `group-peer` with no skip, so a package without it fails at load time.
 
-The default planning source is `committed`: commit the feature's `ticket.md`, `group/brief.md`, and `group/teams/team-1.md`, `team-2.md`, and so on for the requested team count. The brief states the shared outcome, constraints, distinct starting hypotheses and the lead's synthesis responsibility. Markdown is not executable configuration.
+The default planning source is `committed`: commit the change folder (`context/changes/<id>/` with `change.md`, `frame.md`, and `plan.md`), `group/brief.md`, and `group/teams/team-1.md`, `team-2.md`, and so on for the requested team count, all inside the change folder. The brief states the shared outcome, constraints, distinct starting hypotheses and the lead's synthesis responsibility. Markdown is not executable configuration.
 
-To keep group planning private, run `limen planning private` in the project root before activation. `limen planning` shows the setting stored in `.limen/planning-source`. `limen planning committed` restores the default for new runs. Each private packet file must be a readable file inside that root, also after symlinks resolve. A path that contains `..` or escapes the root fails before activation. Members receive absolute paths to the ticket, the brief, and their team note. They do not receive copies, and their task does not embed the private approach note. Jobs, their descendants, and their continuations keep the planning source recorded at spawn, even when the project setting changes. They read the vision and board in the canonical project root. Never copy, link, stage or commit private planning. Product-code Git checks, lead authority, and group limits do not change.
+To keep group planning private, run `limen planning private` in the project root before activation. `limen planning` shows the setting stored in `.limen/planning-source`. `limen planning committed` restores the default for new runs. Each private packet file must be a readable file inside that root, also after symlinks resolve. A path that contains `..` or escapes the root fails before activation. Members receive absolute paths to the change folder, the brief, and their team note. They do not receive copies, and their task does not embed the private approach note. Jobs, their descendants, and their continuations keep the planning source recorded at spawn, even when the project setting changes. They read the vision and the change files in the canonical project root. Never copy, link, stage or commit private planning. Product-code Git checks, lead authority, and group limits do not change.
 
 From the lead's tool, with the repository as its working directory:
 
 ```sh
-limen group start spec/features/active/FNNN-name \
+limen group start context/changes/<id> \
   --teams 2 --workers-per-team 2 \
   --timeout 30m --worker-timeout 20m \
   --engine omp --provider openai-codex --model gpt-6.1-sol \
   --thinking xhigh --worker-thinking high --detached
 ```
 
-All machine settings and limits are required and recorded. `--provider` and `--model` are the default for every team; repeat `--team-model team-N=provider/model` to give a team its own model, for example `--team-model team-2=anthropic/claude-opus-5-5`. The engine and the two reasoning levels stay shared. `--detached` forces background members; `--tab` requires Herdr; omit both for the existing environment-dependent default. The final output line is the group ID. Activation selects the root from the feature and working directory, not an inherited `LIMEN_CONTEXT_ROOT`.
+All machine settings and limits are required and recorded. `--provider` and `--model` are the default for every team; repeat `--team-model team-N=provider/model` to give a team its own model, for example `--team-model team-2=anthropic/claude-opus-5-5`. The engine and the two reasoning levels stay shared. `--detached` forces background members; `--tab` requires Herdr; omit both for the existing environment-dependent default. The final output line is the group ID. Activation selects the root from the change folder and working directory, not an inherited `LIMEN_CONTEXT_ROOT`. An effort folder (`context/efforts/<id>`) works the same way.
 
 For Pi groups, repeat `--extension PATH` for trusted local extensions shared by every team, or `--team-extension team-N=PATH` for team-only additions. Common paths come first. Paths use the lead command's directory/home, resolve symlinks and deduplicate in first-seen order. Quote the whole `team-N=PATH` argument when it contains spaces; paths may contain `=`. All selections are checked before activation. OMP refuses these options. See [path rules and trust limits](commands.md#start-and-continue-jobs).
 
@@ -36,7 +36,7 @@ Repeating start returns the recorded run without changing its extensions, rechec
 
 ## Work and publish
 
-Every member receives its canonical root, group and team IDs, feature pointer and approach note. Its task also names the exact `limen` executable of the package that started the group, because a member's shell may put another installed Limen first on PATH, and the team's exact worker launch settings. Its **first tool action** publishes its own initial hypothesis, before reading peer findings or using other tools. This independence ordering is prompt guidance, not a new workflow phase.
+Every member receives its canonical root, group and team IDs, change pointer and approach note. Its task also names the exact `limen` executable of the package that started the group, because a member's shell may put another installed Limen first on PATH, and the team's exact worker launch settings. Its **first tool action** publishes its own initial hypothesis, before reading peer findings or using other tools. This independence ordering is prompt guidance, not a new workflow phase.
 
 Only a team coordinator launches that team's workers, through ordinary `limen spawn` with the recorded engine, provider, model and worker reasoning explicitly supplied. Worker continuations and separately authorized reviews each consume another total launch slot, even if their predecessor finished. Reviews require a candidate branch owned by that team. Exhaustion asks the lead; it never replenishes a run. Built-in helper agents do not bypass the allowance.
 
@@ -62,7 +62,7 @@ The group has a fixed wall-clock deadline. Each worker's deadline is the shorter
 
 ## Delivery evidence
 
-`limen group status GROUP-ID` shows the feature, local deadline and minutes left, stopped and closed flags, and one state row per member. A reserved member without a published job state reads `no job record yet`. Use `limen group status GROUP-ID --json` for the full run, roster-derived states, events and receipt evidence. Members omit `GROUP-ID` in both forms. Job records remain authoritative for job state.
+`limen group status GROUP-ID` shows the change, local deadline and minutes left, stopped and closed flags, and one state row per member. A reserved member without a published job state reads `no job record yet`. Use `limen group status GROUP-ID --json` for the full run, roster-derived states, events and receipt evidence. Members omit `GROUP-ID` in both forms. Job records remain authoritative for job state.
 
 Each event has one receipt per recipient. A receipt moves from queued to accepted, observed and processed. None of these states proves that a member agreed with or acted on the event. A receipt marked `uncertain` means a delivery was interrupted, so the event may or may not have reached its recipient. Inspect it before you act on it. Limen tries each recipient and event at most twice automatically.
 
@@ -82,11 +82,11 @@ Stop blocks new launches, waits for a launch in progress to finish, and then sto
 
 Every unclosed group's member worktree and job record is protected from ordinary automatic pruning, explicit `prune`, and `prune --retire`. Close refuses while any member is live/uncertain or any retained worktree is dirty. Refusal preserves all protection. Commit or recover dirty work deliberately; never force-delete it to make close succeed. Successful close releases clean member paths for ordinary pruning, but retains the group cabinet and publications.
 
-Resume the original lead session to recover its subscription and bounded catch-up. A different session does not silently inherit lead authority. A command that prints `group lock busy or uncertain` names a cabinet lock. Read its `.lock/owner` before you recover the lock by hand. Limen recovers a lock whose owner died; it never evicts a live owner. An uncertain or interrupted recovery is evidence to inspect, not a reason to launch a replacement roster. Retained evidence is addressed by group ID, independently of the feature's current lane.
+Resume the original lead session to recover its subscription and bounded catch-up. A different session does not silently inherit lead authority. A command that prints `group lock busy or uncertain` names a cabinet lock. Read its `.lock/owner` before you recover the lock by hand. Limen recovers a lock whose owner died; it never evicts a live owner. An uncertain or interrupted recovery is evidence to inspect, not a reason to launch a replacement roster. Retained evidence is addressed by group ID, independently of where the change folder is now.
 
-The lead puts selected findings and team summaries in the feature's `group/findings/` and writes `group/synthesis.md`. In committed mode, the lead commits them as an ordinary documentation change. In private mode, the lead keeps them in the canonical project root and does not stage or commit them. Moving the feature does not move or strand its live cabinet.
+The lead puts selected findings and team summaries in the change folder's `group/findings/` and writes `group/synthesis.md`. In committed mode, the lead commits them as an ordinary documentation change. In private mode, the lead keeps them in the canonical project root and does not stage or commit them. Archiving the change does not move or strand its live cabinet.
 
-The lead lands through the spec keeper. After merging the team branches it keeps onto one integration branch, the lead starts one keeper for the feature ticket: `limen keeper <ticket> --group GROUP-ID --candidate <integration branch> --engine E --provider P --model M --thinking T`. `--group` lists every member job in the packet, so the keeper can read each transcript. The keeper refuses while a member runs and fixes ticket, board and map links on its own branch at the integration tip. The lead then lands the keeper job, which carries the integration and the fixes. Members cannot start a keeper or land.
+The lead lands through the change keeper. After merging the team branches it keeps onto one integration branch, the lead starts one keeper for the change: `limen keeper context/changes/<id>/ --group GROUP-ID --candidate <integration branch> --engine E --provider P --model M --thinking T`. `--group` lists every member job in the packet, so the keeper can read each transcript. The keeper refuses while a member runs and fixes change files and map links on its own branch at the integration tip. The lead then lands the keeper job, which carries the integration and the fixes. Members cannot start a keeper or land. After the land, the lead runs `/dx-archive <id>`.
 
 ## Reproducible proof setup
 
@@ -98,7 +98,7 @@ node /path/to/candidate/bin/limen-group-fixture.mjs /absolute/new/disposable/rep
 
 The generator commits the shared job-summary task, deterministic acceptance checks and two approach notes, with no remote or finish webhook. It prints the exact interactive-lead setup and two-team/one-worker launch command. The task source intentionally does not exist yet; members implement it. No dependency install is needed for the fixture's native Node tests.
 
-Follow `spec/features/active/F740-collaborative-groups/scenario.md`. Retain the candidate SHA, fixture path, command, engine/provider/model/reasoning, group/member IDs, candidate SHAs, real check output, finding/response event IDs and observed transcript excerpts. Each member's initial hypothesis must precede its first observed peer delivery. The lead must compare evidence and write synthesis, then prove stop and deliberate clean close. Queue acceptance or a clean worker exit is not a pass. Quota or engine failure preserves evidence without changing models. Detached proof does not establish hosted real-agent transport.
+Follow the proof scenario of the original collaborative-groups work, which Git history keeps from before the move to `context/` (the scenario file at commit `102b009`). Retain the candidate SHA, fixture path, command, engine/provider/model/reasoning, group/member IDs, candidate SHAs, real check output, finding/response event IDs and observed transcript excerpts. Each member's initial hypothesis must precede its first observed peer delivery. The lead must compare evidence and write synthesis, then prove stop and deliberate clean close. Queue acceptance or a clean worker exit is not a pass. Quota or engine failure preserves evidence without changing models. Detached proof does not establish hosted real-agent transport.
 
 ## How it works
 

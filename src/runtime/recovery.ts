@@ -58,7 +58,8 @@ export async function claimRecovery(jobDir: string): Promise<(() => Promise<void
 
 /** Unlike visibility, recovery requires a fresh concrete answer, not Herdr's last good status. */
 export async function recoveryTarget(jobDir: string): Promise<string | "missing" | "unknown"> {
-	const name = (await textFile(`${jobDir}/agent-name`)) || hostedAgentName(basename(jobDir));
+	const name =
+		(await textFile(`${jobDir}/agent-name`)) || hostedAgentName(basename(jobDir), await textFile(`${jobDir}/label`));
 	const target = (await textFile(`${jobDir}/herdr/agent`)) || (await textFile(`${jobDir}/herdr/pane`)) || name;
 	const status = hostedAgentStatus(target, "fresh");
 	if (status === "unknown") {
@@ -97,7 +98,8 @@ export async function recoverHostedOwner(jobDir: string): Promise<void> {
 		LIMEN_HOSTED_TARGET: "",
 		LIMEN_LABEL: (await textFile(`${jobDir}/label`)) || id,
 		LIMEN_ROLE: (await textFile(`${jobDir}/role`)) || "worker",
-		LIMEN_AGENT_NAME: (await textFile(`${jobDir}/agent-name`)) || hostedAgentName(id),
+		LIMEN_AGENT_NAME:
+			(await textFile(`${jobDir}/agent-name`)) || hostedAgentName(id, await textFile(`${jobDir}/label`)),
 		LIMEN_CONTEXT_ROOT: dirname(dirname(dirname(jobDir))),
 	});
 	const deadline = Date.now() + 5_000;

@@ -5,7 +5,7 @@ import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export type Drift =
-	| { readonly path: string; readonly kind: "leftover" | "overlay" }
+	| { readonly path: string; readonly kind: "leftover" | "overlay" | "old manual" }
 	| { readonly path: string; readonly kind: "stale"; readonly matchedAt: string; readonly changedAt: string };
 
 export function packageRoot(): string {
@@ -13,7 +13,7 @@ export function packageRoot(): string {
 }
 
 const TRACKED = [
-	["AGENTS.md", "templates/agents.md"],
+	[".agents/limen/agents.md", "templates/agents.md"],
 	[".agents/limen/worker.md", "templates/worker.md"],
 	[".agents/limen/reviewer.md", "templates/reviewer.md"],
 	[".agents/limen/communication.md", "templates/communication.md"],
@@ -83,7 +83,24 @@ export function listDrift(root: string): readonly Drift[] {
 			found.push({ path, kind: "overlay" });
 		}
 	}
+	if (isOldManual(root)) {
+		found.push({ path: "AGENTS.md", kind: "old manual" });
+	}
 	return found;
+}
+
+/** A root `AGENTS.md` byte-identical to a shipped revision of the package manual: the manual override moved. */
+export function isOldManual(root: string): boolean {
+	const text = readOptional(join(root, "AGENTS.md"));
+	if (text === undefined) {
+		return false;
+	}
+	const packaged = packageRoot();
+	if (text === readOptional(join(packaged, "templates/agents.md"))) {
+		return true;
+	}
+	const hash = digest(text);
+	return templateRevisions(packaged, "templates/agents.md").some((item) => item.hash === hash);
 }
 
 export function formatDrift(drifts: readonly Drift[]): string {
@@ -94,10 +111,13 @@ export function formatDrift(drifts: readonly Drift[]): string {
 	const overlays = drifts.filter((item) => item.kind === "overlay").map((item) => item.path);
 	const lines = [
 		"## Guidance drift",
-		"These project files copy or replace a Limen package default. Ask whether to delete leftovers and stale copies (inherit the package) or keep overlays. Do not overwrite an overlay. `limen init --drop-leftovers` deletes only byte-identical leftovers.",
+		"These project files copy or replace a Limen package default. Ask whether to delete leftovers and stale copies (inherit the package) or keep overlays. Do not overwrite an overlay. `limen init --drop-leftovers` deletes only byte-identical leftovers and an old root manual.",
 	];
 	if (leftovers.length) {
 		lines.push(`leftover (identical; delete to inherit): ${leftovers.join(", ")}`);
+	}
+	if (drifts.some((item) => item.kind === "old manual")) {
+		lines.push("root AGENTS.md is an old Limen manual; move your edits to .agents/limen/agents.md or delete it");
 	}
 	for (const item of drifts) {
 		if (item.kind !== "stale") {

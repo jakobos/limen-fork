@@ -1,13 +1,7 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { readFile } from "node:fs/promises";
 import { createInterface } from "node:readline/promises";
 import { resolveJob } from "../job/lookup.ts";
-import { type BoardEntry, readBoard } from "../picture/board.ts";
-import { readPicture } from "../picture/picture-build.ts";
-import { checkTickets, readTickets } from "../picture/tickets.ts";
 import {
 	abortMerge,
 	commitList,
@@ -18,6 +12,7 @@ import {
 	mergePaths,
 	workspaceRepository,
 } from "../project/git.ts";
+import { changeCheck } from "./change-check.ts";
 import { parseFlags } from "./flags.ts";
 
 export async function landCommand(args: readonly string[], cwd: string): Promise<void> {
@@ -115,11 +110,11 @@ function checkCheckoutBeside(
 	}
 	return dirty.paths;
 }
-/** The strict ticket check and the test/ line cap; either one refuses the land. */
+/** The strict change check and the test/ line cap; either one refuses the land. */
 async function checkLandGates(repository: string, root: string, branch: string, id: string): Promise<void> {
-	const gate = await landTicketCheck(repository, root, branch, "HEAD", id);
+	const gate = await changeCheck(repository, root, branch, "HEAD", id);
 	if (!gate.ok) {
-		throw new Error(`land refused: ${branch} has tickets that fail the strict check\n${gate.lines.join("\n")}`);
+		throw new Error(`land refused: ${branch} has change folders that fail the strict check\n${gate.lines.join("\n")}`);
 	}
 	for (const line of gate.lines) {
 		console.log(line);
@@ -133,19 +128,20 @@ async function checkLandGates(repository: string, root: string, branch: string, 
 	}
 }
 
-/** The cap on `test/` lines that `spec/vision.md` names, or undefined when it names none. */
+/** The cap on `test/` lines that `context/foundation/vision.md` names, or undefined when it names none. */
 export function testLineCap(vision: string): number | undefined {
 	const match = /`test\/` holds at most ([\d,]+) lines/.exec(vision);
 	return match?.[1] ? Number(match[1].replaceAll(",", "")) : undefined;
 }
 
+const VISION = "context/foundation/vision.md";
 // The cap is read from the target's vision, the owner's copy, so a branch cannot raise its own cap.
 // Only a branch that adds test lines and leaves test/ over the cap is refused; deletions always land.
 function landTestCap(
 	repository: string,
 	branch: string,
 ): { readonly line: string; readonly refuse?: string } | undefined {
-	const vision = spawnSync("git", ["show", "HEAD:spec/vision.md"], { cwd: repository, encoding: "utf8" });
+	const vision = spawnSync("git", ["show", `HEAD:${VISION}`], { cwd: repository, encoding: "utf8" });
 	const cap = vision.status === 0 ? testLineCap(vision.stdout) : undefined;
 	if (cap === undefined) {
 		return undefined;
@@ -166,198 +162,18 @@ function landTestCap(
 		counts.split("\n").reduce((sum, row) => sum + (Number(row.slice(row.lastIndexOf(":") + 1)) || 0), 0) +
 		added -
 		removed;
-	const line = `land: test/ holds ${lines} lines after this land (cap ${cap}, spec/vision.md); this branch +${added} -${removed}`;
+	const line = `land: test/ holds ${lines} lines after this land (cap ${cap}, ${VISION}); this branch +${added} -${removed}`;
 	if (lines <= cap || added <= removed) {
 		return { line };
 	}
 	return {
 		line,
-		refuse: `test/ would hold ${lines} lines; spec/vision.md caps it at ${cap}. Remove ${Math.min(lines - cap, added - removed)} test lines in this branch, or ask Adam to raise the cap.`,
+		refuse: `test/ would hold ${lines} lines; ${VISION} caps it at ${cap}. Remove ${Math.min(lines - cap, added - removed)} test lines in this branch, or ask the owner to raise the cap.`,
 	};
-}
-
-export const TICKET_PATH = /^spec\/features\/(?:[^/]+\/)*(F\d+)-[^/]+\/ticket\.md$/;
-
-/**
- * The strict ticket check for tickets that `branch` adds, changes or moves against `target`, read at the branch tip.
- * `lines` is print-ready: the no-map note, warnings, errors, then the keeper command when the check refuses.
- */
-export async function landTicketCheck(
-	repository: string,
-	root: string,
-	branch: string,
-	target = "HEAD",
-	job = "<id>",
-): Promise<{ readonly ok: boolean; readonly tickets: readonly string[]; readonly lines: readonly string[] }> {
-	const changed = changedTickets(repository, branch, target);
-	const tickets = [...changed.keys()];
-	if (tickets.length === 0) {
-		return { ok: true, tickets, lines: [] };
-	}
-	const lines: string[] = [];
-	const placeIds = await checkPictureSources(repository, root, branch, tickets, lines);
-	const tip = await mkdtemp(join(tmpdir(), "limen-land-"));
-	try {
-		const entries = await extractTicketsAtTip(repository, branch, tip);
-		checkBoardLines(tickets, entries, lines);
-		const read = await readTickets(tip);
-		const diagnostics = [...read.diagnostics, ...(placeIds ? checkTickets(read.tickets, placeIds) : [])].filter(
-			(d) => d.source !== null && changed.has(d.source),
-		);
-		const failing = diagnostics.filter((d) => d.level === "error");
-		const errors = failing.map((d) => `error ${d.source}:${d.line ?? 1}: ${d.message}`);
-		let bad = failing[0]?.source ?? undefined;
-		for (const duplicate of duplicateTicketErrors(repository, branch, changed)) {
-			errors.push(duplicate.error);
-			bad ??= duplicate.path;
-		}
-		for (const d of diagnostics) {
-			if (d.level === "warn") {
-				lines.push(`warn ${d.source}:${d.line ?? 1}: ${d.message}`);
-			}
-		}
-		lines.push(...errors);
-		if (errors.length === 0) {
-			return { ok: true, tickets, lines };
-		}
-		bad ??= tickets[0];
-		lines.push(
-			`fix: limen keeper ${bad} --job ${job} --engine <engine> --provider <provider> --model <model> --thinking <level>`,
-		);
-		return { ok: false, tickets, lines };
-	} finally {
-		await rm(tip, { recursive: true, force: true });
-	}
-}
-/** Ticket paths the branch adds, changes or moves against the target, with the first letter of their Git status. */
-function changedTickets(repository: string, branch: string, target: string): Map<string, string> {
-	const changed = new Map<string, string>();
-	for (const row of gitText(repository, ["diff", "--name-status", "-M", `${target}...${branch}`]).split("\n")) {
-		const [status = "", ...paths] = row.split("\t");
-		const path = paths.at(-1) ?? "";
-		if (/^[AMR]/.test(status) && TICKET_PATH.test(path)) {
-			changed.set(path, status[0] ?? "");
-		}
-	}
-	return changed;
-}
-/**
- * Warns about picture sources that name a changed ticket's feature but do not exist at the branch. Returns the place
- * ids tickets may touch, or undefined when the project has no picture map.
- */
-async function checkPictureSources(
-	repository: string,
-	root: string,
-	branch: string,
-	tickets: readonly string[],
-	lines: string[],
-): Promise<ReadonlySet<string> | undefined> {
-	const map = `${root}/.limen/picture`;
-	if (!existsSync(map)) {
-		lines.push(`land: no picture map at ${map}; touches place ids not checked`);
-		return;
-	}
-	const model = await readPicture(map);
-	const placeIds = new Set([
-		...model.nodes.filter((node) => node.kind === "module").map((node) => node.id),
-		...(model.project.rootId ? [model.project.rootId] : []),
-	]);
-	const codes = new Map(tickets.map((path) => [TICKET_PATH.exec(path)?.[1] ?? "", path]));
-	for (const record of [...model.nodes, ...model.edges, ...model.features, ...model.journeys]) {
-		for (const source of record.sources) {
-			const current = codes.get(/\/(F\d+)-/.exec(source)?.[1] ?? "");
-			if (current && !gitOk(repository, ["cat-file", "-e", `${branch}:${source.replace(/\/$/, "")}`])) {
-				const at =
-					(await readFile(join(map, record.source), "utf8")).split("\n").findIndex((line) => line.includes(source)) + 1;
-				lines.push(
-					`warn ${map}/${record.source}:${at || 1}: source "${source}" does not exist at ${branch}; fix: change it to ${current}`,
-				);
-			}
-		}
-	}
-	return placeIds;
-}
-/** Writes the branch's tickets and board into `tip`; returns the board entries, undefined when it has no board. */
-async function extractTicketsAtTip(
-	repository: string,
-	branch: string,
-	tip: string,
-): Promise<Map<string, BoardEntry> | undefined> {
-	const archive = execFileSync("git", ["archive", branch, "--", ":(glob)spec/features/**/ticket.md"], {
-		cwd: repository,
-		maxBuffer: 256 * 1024 * 1024,
-	});
-	execFileSync("tar", ["-x", "-C", tip], { input: archive });
-	const board = spawnSync("git", ["show", `${branch}:spec/build.md`], {
-		cwd: repository,
-		maxBuffer: 64 * 1024 * 1024,
-	});
-	if (board.status === 0) {
-		await writeFile(join(tip, "spec/build.md"), board.stdout);
-	}
-	// A branch with no board at its tip gets no board warnings.
-	return board.status === 0 ? await readBoard(tip) : undefined;
-}
-/** Warns when an active or done ticket has no board line, or a board state that does not match its lane. */
-function checkBoardLines(
-	tickets: readonly string[],
-	entries: ReadonlyMap<string, BoardEntry> | undefined,
-	lines: string[],
-): void {
-	for (const path of tickets) {
-		const lane = path.split("/")[2];
-		const folder = path.split("/").at(-2) ?? "";
-		const code = TICKET_PATH.exec(path)?.[1] ?? "";
-		const want =
-			lane === "active"
-				? { state: "ACTIVE", line: `- \`${folder}\` (🟠 ACTIVE): <one clause> under ## NOW` }
-				: lane === "done"
-					? { state: "PROVEN", line: `- \`${folder}\` (🟢 PROVEN): <one clause> under ## PROVEN` }
-					: undefined;
-		if (!want || !entries) {
-			continue;
-		}
-		const entry = entries.get(code.toLowerCase());
-		if (!entry) {
-			lines.push(`warn spec/build.md: no board line for ${code}; fix: add ${want.line}`);
-		} else if (entry.state !== want.state) {
-			lines.push(
-				`warn spec/build.md:${entry.line}: ${code} is ${entry.state} on the board but its folder is in ${lane}; fix: mark it ${want.state} in the ${lane === "active" ? "NOW" : "PROVEN"} section`,
-			);
-		}
-	}
-}
-/** An added ticket whose F number another ticket at the branch already uses. */
-function duplicateTicketErrors(
-	repository: string,
-	branch: string,
-	changed: ReadonlyMap<string, string>,
-): { readonly path: string; readonly error: string }[] {
-	const duplicates: { readonly path: string; readonly error: string }[] = [];
-	const all = gitText(repository, ["ls-tree", "-r", "--name-only", branch, "--", "spec/features"]).split("\n");
-	for (const [path, status] of changed) {
-		if (status !== "A") {
-			continue;
-		}
-		const code = TICKET_PATH.exec(path)?.[1];
-		const other = all.find((candidate) => candidate !== path && TICKET_PATH.exec(candidate)?.[1] === code);
-		if (!other) {
-			continue;
-		}
-		duplicates.push({
-			path,
-			error: `error ${path}:1: ${code} is also used by ${other}; fix: move this ticket to a free F number (limen ticket new picks one)`,
-		});
-	}
-	return duplicates;
 }
 
 function gitText(cwd: string, args: readonly string[]): string {
 	return execFileSync("git", args, { cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }).trim();
-}
-
-function gitOk(cwd: string, args: readonly string[]): boolean {
-	return spawnSync("git", args, { cwd, stdio: "ignore" }).status === 0;
 }
 
 function parseLandArgs(args: readonly string[]): {

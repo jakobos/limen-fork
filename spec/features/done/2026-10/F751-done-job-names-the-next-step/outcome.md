@@ -1,3 +1,0 @@
-# Outcome
-
-A finish message for a `done` job now says the job is done and names the next step: land it, or name the check that still blocks landing. The same wording is in the webhook `handoff` field, the finish receipt, the desktop notification, the in-session notice, and both coordinator wake texts. No surface says "merge not ready" or "waiting on landing owner". The webhook `status: "waiting"` and `jobState: "done"` fields are unchanged. Checks: typecheck and lint pass; wake tests 39 of 40 and finish webhook tests 200 of 203 under load. The failures are load-sensitive: the reaper test failed 3 of 10 on both old and new code under the same load, and the three finish webhook tests passed 5 of 5 on a quiet rerun.

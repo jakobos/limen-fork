@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
-import { basename, dirname, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, relative, resolve } from "node:path";
 export type GitWorktree = { readonly path: string; readonly branch?: string; readonly detached: boolean };
 type GitResult = { readonly stdout: string; readonly stderr: string; readonly status: number };
 export function repoRoot(cwd: string): string {
@@ -295,26 +295,30 @@ export function liveDiffstat(cwd: string, branch: string): string {
 	const result = git(cwd, ["diff", "--stat", `HEAD...${branch}`]);
 	return result.status === 0 ? result.stdout.trim() : `(unavailable: ${result.stderr.trim() || "git diff failed"})`;
 }
-export function ticketAuthor(
+/** Who first committed a change: the author of the commit that added its change.md or effort.md, following renames. */
+export function changeAuthor(
 	cwd: string,
-	ticket: string,
+	change: string,
 ): { path: string; commit: string; name: string; email: string } {
 	const root = repoRoot(cwd);
-	const absolute = resolve(realpathSync(cwd), ticket);
-	// Git reports the physical root (e.g. /private/var on macOS). Resolve directory
-	// aliases too, but leave the filename literal so tracked symlinks keep their identity.
-	const parent = dirname(absolute);
-	const path = relative(root, resolve(existsSync(parent) ? realpathSync(parent) : parent, basename(absolute)));
-	if (!path || path === ".." || path.startsWith("../")) {
-		throw new Error("ticket path must be a file inside this repository");
+	const absolute = resolve(realpathSync(cwd), change);
+	// Git reports the physical root (e.g. /private/var on macOS). Resolve directory aliases too.
+	const physical = existsSync(absolute) ? realpathSync(absolute) : absolute;
+	const folder = /\/(?:change|effort)\.md$/.test(physical) ? dirname(physical) : physical;
+	const relativeFolder = relative(root, folder);
+	if (!relativeFolder || relativeFolder === ".." || relativeFolder.startsWith("../") || isAbsolute(relativeFolder)) {
+		throw new Error("change path must be inside this repository");
 	}
-	if (git(root, ["cat-file", "-t", `HEAD:${path}`]).stdout.trim() !== "blob") {
-		throw new Error(`ticket author unavailable: ${path} is not a committed file at HEAD`);
+	const path = ["change.md", "effort.md"]
+		.map((name) => `${relativeFolder}/${name}`)
+		.find((file) => git(root, ["cat-file", "-t", `HEAD:${file}`]).stdout.trim() === "blob");
+	if (!path) {
+		throw new Error(`change author unavailable: ${relativeFolder}/change.md is not a committed file at HEAD`);
 	}
 	if (requireGit(root, ["rev-parse", "--is-shallow-repository"]).stdout.trim() === "true") {
-		throw new Error("ticket author unavailable: shallow history; fetch complete history first");
+		throw new Error("change author unavailable: shallow history; fetch complete history first");
 	}
-	// A copy files a new ticket; follow renames, but stop at copies.
+	// A copy files a new change; follow renames, but stop at copies.
 	const [commit, name, email] = requireGit(root, [
 		"log",
 		"--follow",
@@ -328,7 +332,7 @@ export function ticketAuthor(
 		.stdout.trimEnd()
 		.split("\0");
 	if (!commit || !name || !email) {
-		throw new Error(`ticket author unavailable: no creation author found for ${path}`);
+		throw new Error(`change author unavailable: no creation author found for ${path}`);
 	}
 	return { path, commit, name, email };
 }

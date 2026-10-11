@@ -53,8 +53,8 @@ recorded tabs. If several spaces have the same qualified label, Limen logs an
 Limen adds labels to native `idle` and `done`, without changing Herdr's lifecycle.
 For example, `2 RUNNING · 1 watched · 1 unwatched` means there are two unfinished
 job records visible here even though the coordinator can take input. The job
-names and activity follow, with useful words before the feature number:
-`team-2 coordinator · F773 tool`, or `session repair · F012 done`.
+names and activity follow, with useful words before the change id:
+`team-2 coordinator · quality-scan tool`, or `session repair · auth-restart done`.
 Legacy feature-first group labels use the same word order in the display.
 Details stop after three jobs in each group, but counts include all RUNNING jobs.
 The footer shows the same job line. A warning such as `1 of 14 needs attention`
@@ -66,8 +66,8 @@ an idle or live agent cannot make a missing or reused wrapper PID look alive.
 
 A finished job stays on the job line until it lands or closes. It lands when
 its recorded commits are in the checked-out branch, by the same test as
-`limen status`. It closes when its feature folder moves to `done/` or
-`dropped/`, or when `limen prune --retire` removes its record. A job without
+`limen status`. It closes when every change its `Change:` line names is archived
+or dropped, or when `limen prune --retire` removes its record. A job without
 commits cannot land, so it stays until it closes. Limen checks lands and closes
 after each coordinator turn and every 30 seconds. When no running or finished
 job remains, the overlay clears. That is not a merge verdict.

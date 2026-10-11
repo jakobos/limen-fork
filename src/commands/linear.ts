@@ -1,16 +1,17 @@
 import { existsSync } from "node:fs";
-import { readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
 import { limenRoot } from "../project/git.ts";
 import { parseFlags } from "./flags.ts";
 
-/** The Linear mirror toggle is one file: spec/linear.md on, spec/linear.md.off parked. Mirroring itself is agent work; this only moves the config and reports. */
+/** The Linear mirror toggle is one file: .agents/limen/linear.md on, .agents/limen/linear.md.off parked. Mirroring itself is agent work; this only moves the config and reports. */
 export async function linearCommand(args: readonly string[], cwd: string): Promise<void> {
 	const [mode = "status", ...rest] = args;
 	if (mode !== "on" && mode !== "off" && mode !== "status") {
 		throw new Error("linear takes one of: on, off, status");
 	}
 	const fresh = parseIdentity(rest, mode);
-	const config = `${limenRoot(cwd)}/spec/linear.md`;
+	const config = `${limenRoot(cwd)}/.agents/limen/linear.md`;
 	const parked = `${config}.off`;
 	if (mode === "off") {
 		if (!existsSync(config)) {
@@ -18,34 +19,37 @@ export async function linearCommand(args: readonly string[], cwd: string): Promi
 			return;
 		}
 		await rename(config, parked);
-		console.log("linear mirror off (config kept at spec/linear.md.off)");
+		console.log("linear mirror off (config kept at .agents/limen/linear.md.off)");
 		return;
 	}
 	if (mode === "on" && !existsSync(config)) {
 		if (existsSync(parked)) {
 			if (fresh) {
 				throw new Error(
-					"config already parked at spec/linear.md.off; run limen linear on without options, or edit that file",
+					"config already parked at .agents/limen/linear.md.off; run limen linear on without options, or edit that file",
 				);
 			}
 			await rename(parked, config);
 		} else if (fresh) {
+			await mkdir(dirname(config), { recursive: true });
 			await writeFile(config, `# Linear mirror\nTeam: ${fresh.team}\nProject: ${fresh.project}\n`, { flag: "wx" });
 			console.log("config written; creating the Linear project and any backfill remain coordinator work");
 		} else {
 			throw new Error(
-				"no linear config: run limen linear on --team <name> --project <name>, or write spec/linear.md (see the installed package's templates/linear.md)",
+				"no linear config: run limen linear on --team <name> --project <name>, or write .agents/limen/linear.md (see the installed package's templates/linear.md)",
 			);
 		}
 	} else if (fresh) {
-		throw new Error("spec/linear.md already exists; edit it instead of passing --team/--project");
+		throw new Error(".agents/limen/linear.md already exists; edit it instead of passing --team/--project");
 	}
 	if (existsSync(config)) {
 		console.log(`linear mirror on\n${await identity(config)}`);
 		return;
 	}
 	console.log(
-		existsSync(parked) ? "linear mirror off (config parked at spec/linear.md.off)" : "linear mirror off (no config)",
+		existsSync(parked)
+			? "linear mirror off (config parked at .agents/limen/linear.md.off)"
+			: "linear mirror off (no config)",
 	);
 }
 

@@ -1,6 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { existsSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { changePointers } from "../project/planning.ts";
 
 type JobIdentity = { readonly id: string; readonly label: string; readonly branch: string };
 export type Job = JobIdentity &
@@ -115,9 +114,21 @@ export function resolveJobId(
 	}
 	throw new Error(`ambiguous job ${JSON.stringify(needle)}: ${matches.join(", ")}`);
 }
+const LABEL_CHANGES = /\s·\s+([a-z0-9]+(?:-[a-z0-9]+)*)(?:\s+([a-z0-9]+(?:-[a-z0-9]+)*))?\s*$/;
+/** The change ids a label ends with: `google sign-in · oauth-login`, or two for a follow-up (`· new-id old-id`). */
+function labelChanges(label: string): string[] {
+	const [, first, second] = LABEL_CHANGES.exec(label) ?? [];
+	return [first, second].filter((id): id is string => id !== undefined);
+}
+/** A continuation's default label: the parent's words, then "continue", with the change suffix kept last. */
+export function continuationLabel(parent: string): string {
+	return LABEL_CHANGES.test(parent)
+		? parent.replace(LABEL_CHANGES, (suffix) => ` continue${suffix}`)
+		: `${parent} continue`;
+}
 export function makeJobId(label: string): string {
-	const feature = /\bf\d{3,}\b/i.exec(label)?.[0] ?? "";
-	const words = `${feature} ${label.replace(/\bf\d{3,}\b/gi, " ")}`.toLowerCase();
+	const [change = ""] = labelChanges(label);
+	const words = `${change} ${label.replace(LABEL_CHANGES, " ")}`.toLowerCase();
 	const slug =
 		words
 			.replace(/[^a-z0-9]+/g, "-")
@@ -126,11 +137,16 @@ export function makeJobId(label: string): string {
 			.replace(/-$/, "") || "job";
 	return `${new Date().toISOString().slice(0, 10)}-${slug}-${randomBytes(4).toString("hex")}`;
 }
-export function hostedAgentName(jobId: string): string {
+/** `limen-<change id cut to 17>-<hex8>` when the label names a change; otherwise the job id's slug stands in. */
+export function hostedAgentName(jobId: string, label = ""): string {
 	const hex = /[0-9a-f]{8}$/.exec(jobId)?.[0] ?? "";
-	const feature = /(?:^|-)(f\d{3,})(?:-|$)/i.exec(jobId)?.[1]?.toLowerCase();
-	if (feature && hex) {
-		return `limen-${feature}-${hex}`;
+	const [change] = labelChanges(label);
+	const name = change
+		?.replace(/^[^a-z]+/, "")
+		.slice(0, 17)
+		.replace(/-$/, "");
+	if (name && hex) {
+		return `limen-${name}-${hex}`;
 	}
 	const cut = jobId.slice(0, hex ? -9 : undefined).toLowerCase();
 	const dashed = cut.replace(/^\d{4}-\d{2}-\d{2}-/, "").replace(/[^a-z0-9_-]+/g, "-");
@@ -157,35 +173,13 @@ export function parseDuration(value: string): number {
 export function producedNothing(toolCalls: number | undefined, commits: string | undefined): boolean {
 	return toolCalls === 0 && commits === "";
 }
-/** Features whose folder is in spec/features/done/ or dropped/. */
-export function closedFeatures(root: string): ReadonlySet<string> {
-	const closed = new Set<string>();
-	for (const lane of ["done", "dropped"]) {
-		const laneDir = join(root, "spec", "features", lane);
-		if (!existsSync(laneDir)) {
-			continue;
-		}
-		for (const month of readdirSync(laneDir, { withFileTypes: true })) {
-			if (!month.isDirectory()) {
-				continue;
-			}
-			for (const entry of readdirSync(join(laneDir, month.name), { withFileTypes: true })) {
-				const feature = /^(F\d+)-/i.exec(entry.name)?.[1];
-				if (entry.isDirectory() && feature) {
-					closed.add(feature.toUpperCase());
-				}
-			}
-		}
-	}
-	return closed;
-}
 /**
- * The features a job names in its label or ID when every one is closed; none while any is open.
- * A label can name two features (`F100 follow-up for F099`); the job belongs to both, so closing one leaves it in place.
+ * The changes a job's task names with `Change:` pointers when every one is closed; none while any is open.
+ * A task can name two changes; the job belongs to both, so closing one leaves it in place.
  */
-export function closedJobFeatures(label: string, id: string, closed: ReadonlySet<string>): readonly string[] {
-	const named = [...new Set(`${label}\n${id}`.match(/\bF\d+\b/gi)?.map((feature) => feature.toUpperCase()))];
-	return named.every((feature) => closed.has(feature)) ? named : [];
+export function closedJobChanges(task: string, closed: ReadonlySet<string>): readonly string[] {
+	const named = [...new Set(changePointers(task).map((pointer) => pointer.id))];
+	return named.every((id) => closed.has(id)) ? named : [];
 }
 export function renderJob(job: Job, view: JobView): string {
 	const facts = [

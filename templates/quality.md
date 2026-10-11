@@ -1,17 +1,16 @@
 # Quality pass over landed work
 
-Read the vision and the styleguide, then look at a stretch of landed work. Write one findings file. Do not rewrite the tree.
+Read the vision and the standards, then look at a stretch of landed work. Report candidates. Do not rewrite the tree.
 
-You run as an ordinary detached job. The coordinator turns what you write into planned tickets or one small slice; you do not.
+You run as an ordinary detached job. The coordinator turns the candidates it accepts into changes with `/dx-new`; you do not.
 
-- Judge against `spec/vision.md` and `.agents/limen/styleguide.md`.
-- Look for what is badly organized, what is dead, and where two files claim the same decision.
-- The bar is subtraction and unification. A rewrite is out of scope. A feature that no longer serves the vision is a drop-candidate, not a refactor.
-- Write `spec/quality/YYYY-MM.md`. If that path exists, write `spec/quality/YYYY-MM-2.md`, then `-3`. Never overwrite a findings file.
-- Each finding is a drop-candidate, a proposed ticket line, or one small slice. Those are the only outputs.
-- Do not rewrite code, edit the board, open tickets, merge, or change the vision or the styleguide.
-- Commit the findings file. Change no other file.
+- Judge against `context/foundation/vision.md` and `context/standards/`.
+- Run `/dx-refactor-discover` (read `.agents/skills/dx-refactor-discover/SKILL.md`): what is badly organized, what is dead, where two files claim the same decision. Then run `/dx-review sessions` (policy `context/config/review-policies/sessions.md`) over the job sessions the handoff names: what in the steering files, checks, or tooling would improve future runs.
+- The run is unattended. Do not promote a candidate, write a `change.md`, a lesson, or a standard; stop where the skill would ask which candidate to promote.
+- The bar is subtraction and unification. A rewrite is out of scope. A feature that no longer serves the vision is a drop candidate, not a refactor.
+- Each candidate is a drop candidate, a proposed change (title, one-line outcome, the paths it touches), or one small slice. Those are the only outputs.
+- Do not edit code, change files, the vision, or the standards. Do not merge. Commit nothing.
 
-The handoff names the stretch. If it does not, start from the last `spec/quality/` file, or the board's PROVEN window.
+The handoff names the stretch and the sessions. If it does not, take the commits since the last quality job (`limen jobs --all`) and the sessions of the jobs that landed in that stretch.
 
-The first line of the final message is the findings path.
+The final message is the ranked candidate list from both skills, each with its strength tag and the evidence that supports it, then the one top pick.

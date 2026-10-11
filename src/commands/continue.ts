@@ -13,7 +13,7 @@ import {
 	teamRoute,
 } from "../job/group-cabinet.ts";
 import { syncLifecycle } from "../job/group-events.ts";
-import { hostedAgentName, isTerminal, makeJobId } from "../job/job.ts";
+import { continuationLabel, hostedAgentName, isTerminal, makeJobId } from "../job/job.ts";
 import { resolveJob } from "../job/lookup.ts";
 import { publishJob } from "../job/publication.ts";
 import { atomicWrite, finalizeJob } from "../job/record.ts";
@@ -27,12 +27,12 @@ import {
 	workspaceRoot,
 } from "../project/git.ts";
 import {
+	changePointers,
 	inheritedPlanning,
 	type PlanningSource,
 	privatePlanningFile,
 	privatePlanningTask,
 	recordedPlanningSource,
-	ticketPointers,
 } from "../project/planning.ts";
 import {
 	defaultModel,
@@ -194,7 +194,7 @@ async function continueJob(args: readonly string[], cwd: string, locked = false)
 	preflightEngine(profile, chosenModel, provider);
 	const source = recordedPlanningSource(parentDir);
 	const followUp = await continuationTask(root, parentDir, options.instruction, source, membership);
-	const finalLabel = label ?? `${(await text(`${parentDir}/label`)) || parentId} · continue`;
+	const finalLabel = label ?? continuationLabel((await text(`${parentDir}/label`)) || parentId);
 	const id = makeJobId(finalLabel);
 	const jobDir = `${root}/.limen/jobs/${id}`;
 	const role = review ? "reviewer" : (await text(`${parentDir}/role`)) || "worker";
@@ -363,7 +363,7 @@ async function continuationExtensions(
 	}
 	return extensions;
 }
-/** Private planning: carry the parent's canonical ticket and check every pointer before a record exists. */
+/** Private planning: carry the parent's canonical change and check every pointer before a record exists. */
 async function continuationTask(
 	root: string,
 	parentDir: string,
@@ -375,9 +375,9 @@ async function continuationTask(
 	if (source !== "private") {
 		return followUp;
 	}
-	const parentTicket = ticketPointers(await readFile(`${parentDir}/task.md`, "utf8"))[0]?.path;
-	if (parentTicket && ticketPointers(followUp).length === 0) {
-		followUp += `\n\nTicket: ${parentTicket}`;
+	const parentChange = changePointers(await readFile(`${parentDir}/task.md`, "utf8"))[0]?.path;
+	if (parentChange && changePointers(followUp).length === 0) {
+		followUp += `\n\nChange: ${parentChange}`;
 	}
 	followUp = await privatePlanningTask(root, followUp);
 	if (membership?.member) {
@@ -419,7 +419,7 @@ async function publishContinuation(record: ContinuationRecord): Promise<void> {
 		parent: parent.id,
 		session: { source: `${parent.dir}/session/${parent.session}`, name: parent.session ?? "" },
 		...(parent.repo ? { repo: parent.repo } : {}),
-		...(record.hosted ? { agentName: hostedAgentName(id), continueTask: record.task } : {}),
+		...(record.hosted ? { agentName: hostedAgentName(id, record.label), continueTask: record.task } : {}),
 		...(!membership && notificationSession ? { notificationSession } : {}),
 		...(coordinatorTab ? { originTab: coordinatorTab } : {}),
 		...(coordinatorPane ? { originPane: coordinatorPane } : {}),

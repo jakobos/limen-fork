@@ -1,6 +1,10 @@
+import { boardCommand } from "./commands/board.ts";
+import { changeAuthorCommand } from "./commands/change-author.ts";
+import { changeCommand } from "./commands/change-check.ts";
 import { closeCommand } from "./commands/close.ts";
 import { continueCommand } from "./commands/continue.ts";
 import { diffCommand } from "./commands/diff.ts";
+import { dropCommand } from "./commands/drop.ts";
 import { githubCommand } from "./commands/github.ts";
 import { groupCommand } from "./commands/group.ts";
 import { initCommand, workspaceCommand } from "./commands/init.ts";
@@ -17,8 +21,6 @@ import { statusCommand } from "./commands/status.ts";
 import { steerCommand } from "./commands/steer.ts";
 import { stopCommand } from "./commands/stop.ts";
 import { sweepCommand } from "./commands/sweep.ts";
-import { ticketCommand } from "./commands/ticket.ts";
-import { ticketAuthorCommand } from "./commands/ticket-author.ts";
 import { waitCommand } from "./commands/wait.ts";
 import { unwatchCommand, watchCommand } from "./commands/watch.ts";
 import { webhookCommand } from "./commands/webhook.ts";
@@ -50,8 +52,10 @@ const COMMANDS = {
 	close: closeCommand,
 	sweep: sweepCommand,
 	linear: linearCommand,
-	"ticket-author": ticketAuthorCommand,
-	ticket: ticketCommand,
+	board: boardCommand,
+	drop: dropCommand,
+	change: changeCommand,
+	"change-author": changeAuthorCommand,
 	webhook: webhookCommand,
 } as const satisfies Record<
 	| "init"
@@ -77,8 +81,10 @@ const COMMANDS = {
 	| "close"
 	| "sweep"
 	| "linear"
-	| "ticket-author"
-	| "ticket"
+	| "board"
+	| "drop"
+	| "change"
+	| "change-author"
 	| "webhook",
 	Command
 >;
@@ -88,25 +94,25 @@ usage:
   limen init --drop-leftovers
   limen workspace init
   limen planning [committed|private]                # inspect or persist the project planning source; default committed
-  limen group start FEATURE --teams N --workers-per-team N --timeout D --worker-timeout D --engine E --provider P --model M --thinking T --worker-thinking T [--team-model team-N=provider/model] [--extension PATH ...] [--team-extension team-N=PATH ...; Pi only] [--detached|--tab] [--new-run]
+  limen group start context/changes/ID --teams N --workers-per-team N --timeout D --worker-timeout D --engine E --provider P --model M --thinking T --worker-thinking T [--team-model team-N=provider/model] [--extension PATH ...] [--team-extension team-N=PATH ...; Pi only] [--detached|--tab] [--new-run]
   limen group status [GROUP-ID] [--json]  # short roster by default; --json keeps the full record
   limen group publish [GROUP-ID] [--team team-N] "finding"  # members inherit verified membership; lead supplies ID
   limen group wait [GROUP-ID] [--timeout D]
   limen group stop|close [GROUP-ID]
-  limen spawn --engine <engine> --provider <provider> --model <model> --thinking <level> "Implement FNNN: <outcome>. Start by writing <slice>. Ticket: spec/features/active/FNNN-slug/ticket.md" [--label L] [--branch B] [--role NAME] [--timeout 20m; default 90m] [--task-file F|-] [--prepare CMD] [--extension PATH ...; Pi only]
+  limen spawn --engine <engine> --provider <provider> --model <model> --thinking <level> "Implement <outcome>. Start by writing <slice>. Change: context/changes/ID/" --label "<what this changes> · ID" [--branch B] [--branch B] [--role NAME] [--timeout 20m; default 90m] [--task-file F|-] [--prepare CMD] [--extension PATH ...; Pi only]
   limen spawn --engine <engine> --provider <provider> --model <model> --thinking <level> "Short title" --task-file F|-  # the file is the task; the positional words become the label
   limen spawn --engine <engine> --provider <provider> --model <model> --thinking <level> "…" [--label L]  # selected engine's flags; in Herdr: hosted, else detached
   limen spawn --engine <engine> --provider <provider> --model <model> --thinking <level> --tab "…"  # force hosted (requires Herdr; no --timeout)
   limen spawn --engine <engine> --provider <provider> --model <model> --thinking <level> --detached "…"  # force background worker + log-tail tab
-  limen spawn --engine <engine> --provider <provider> --model <model> --thinking <level> --repo R "Implement FNNN: <outcome>. Ticket: spec/features/active/FNNN-slug/ticket.md" [--label L]
-  limen spawn --engine <engine> --provider <provider> --model <model> --thinking <level> --review --detached --branch B --label L [--base SHA] [--head SHA] "Review the FNNN candidate against spec/features/active/FNNN-slug/ticket.md"
+  limen spawn --engine <engine> --provider <provider> --model <model> --thinking <level> --repo R "Implement <outcome>. Change: context/changes/ID/" [--label L]
+  limen spawn --engine <engine> --provider <provider> --model <model> --thinking <level> --review --detached --branch B --label L [--base SHA] [--head SHA] "Run /dx-review implementation ID. Change: context/changes/ID/"
   limen continue <id|suffix|label> "follow-up instruction" [--review] [--label L] [--engine pi|omp] [--provider P] [--model X] [--thinking T] [--tab|--detached] [--extension PATH ...; replaces ordinary Pi list, group list stays fixed]
                                   # resume a finished job in its own engine session — full context, same worktree; Herdr default is hosted
   limen steer <id|suffix|label> | --running "correction"
   limen diff <id|suffix|label>
   limen wait <id|suffix|label>
   limen land <id|suffix|label> [--onto BRANCH] [--yes]  # merge a done job onto the current branch
-  limen keeper <ticket-path> (--job ID [--job ID ...] | --group GROUP-ID) [--candidate BRANCH] --engine E --provider P --model M --thinking T [--timeout D]  # after the work: a short job fixes ticket, board and map links on its own branch
+  limen keeper context/changes/ID/ (--job ID [--job ID ...] | --group GROUP-ID) [--candidate BRANCH] --engine E --provider P --model M --thinking T [--timeout D]  # after the work: a short job fixes change-folder and map links on its own branch
   limen stop <id|suffix|label> [reason]
   limen jobs [--running|--active|--all|--label PREFIX|<id|suffix|label>]
   limen status [--all]                          # plant inbox: running, candidates to inspect, needs a decision (last 7 days), coordinator tabs
@@ -114,13 +120,14 @@ usage:
   limen watch <id|suffix|label> | --running
   limen unwatch <id|suffix|label> | --all
   limen open <id|suffix|label>
-  limen close <FNNN>
-  limen ticket-author <ticket-path>                 # creation-commit author, following Git renames
-  limen ticket new "what becomes true" [--lane planned|active] [--touches id,id]  # next unused F number across lanes, limen/* branches and job labels
-  limen ticket check [BRANCH]                    # land gate on demand: tickets BRANCH adds or changes; run before a hand git merge
+  limen close <change-id>                        # close leftover tabs of jobs whose changes are archived or dropped
+  limen board                                    # NOW, NEXT and RECENT from change front matter and job records
+  limen drop <change-id> "reason"                # status dropped, reason in ## Notes, git mv to context/archive/<today>-<id>/; no commit
+  limen change check [BRANCH]                    # land gate on demand: change folders BRANCH adds or changes; run before a hand git merge
+  limen change-author <change-folder>            # creation-commit author of change.md or effort.md, following Git renames
   limen sweep [--install|--uninstall]
   limen webhook test                             # send one test ping to this plant's finish webhook targets
-  limen linear [on [--team T --project P]|off|status]   # Linear mirror toggle — renames spec/linear.md ↔ .off; --team/--project write a fresh config
+  limen linear [on [--team T --project P]|off|status]   # Linear mirror toggle — renames .agents/limen/linear.md ↔ .off; --team/--project write a fresh config
   limen github connect|disconnect|status|doctor  # bind projects and diagnose seat safety
   limen github ensure [registered-root]       # require a live registered Herdr coordinator
   limen github poll                           # run one polling pass as the isolated App user
@@ -132,7 +139,7 @@ usage:
   limen picture serve [--dir D] [--port N]  # the same page on 127.0.0.1 (default port 4747), with live job activity
   limen picture tick [--dir D] [--branch B] [--dry-run] --engine E --provider P --model M --thinking T  # quiet one-tip pass
   limen picture watch [off | on [--branch B] [--dir D] --engine E --provider P --model M --thinking T]  # per-project, off by default: one tick when the top branch moves
-Pass a short coordinator instruction, not $(cat ticket.md). The ticket is a pointer, not the prompt.`;
+Pass a short coordinator instruction, not $(cat change.md). The Change: line is a pointer, not the prompt.`;
 export async function main(args: readonly string[], cwd = process.cwd()): Promise<void> {
 	try {
 		if (process.env.LIMEN_INTERNAL_RUN === "1") {

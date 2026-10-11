@@ -1,5 +1,0 @@
-# Outcome
-
-`@limen` or `/limen` in the body of an open issue now wakes the registered Herdr coordinator once per issue, the same way an issue comment does. The author must have `write`, `maintain`, or `admin`. The title alone, a closed issue, and a pull request body do not count. The body as the poller first reads it decides, so a later edit makes no second claim. Issue bodies have their own cursor (`issue-cursor.json`) and claim name (`issue-<n>`), so they never collide with a comment claim. `github work` and `github resolve` accept a body claim; `github review` refuses it. Landed fast-forward on `main` at `211efee`.
-
-Checks: the worker's full `npm run check` passed 597 of 598; the one failure, a spawn timing test, fails the same way on the base commit. On the tip, typecheck and Biome pass, and the issue body, doorbell, doctor, and template history tests pass 22 of 22. Rollout note: on the first poll after an upgrade, the new cursor starts at the binding's `connectedAt`, so any open issue opened since then with `@limen` in its body gets one claim. The live bot on the Alice computer still runs the old install at `/opt/limen`.

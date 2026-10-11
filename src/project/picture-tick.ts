@@ -172,7 +172,7 @@ export function relevantPicturePaths(diff: string, sources: readonly string[], d
 	const datasetInsideRepository = !isAbsolute(dataset) && dataset !== ".." && !dataset.startsWith("../");
 	const datasetPrefix = `${dataset}/`;
 	const ignored = (path: string): boolean => {
-		if (["spec/", "docs/", ".agents/"].some((prefix) => path.startsWith(prefix))) {
+		if (["context/", "docs/", ".agents/"].some((prefix) => path.startsWith(prefix))) {
 			return true;
 		}
 		if (!path.includes("/") && path.endsWith(".md")) {

@@ -48,15 +48,15 @@ test("shipped template history starts at the current template", async () => {
 	}
 });
 
-test("test/ stays within the line cap that spec/vision.md sets", async () => {
-	const cap = testLineCap(await readFile(join(root, "spec/vision.md"), "utf8"));
-	assert.ok(cap, "spec/vision.md names no cap for test/");
+test("test/ stays within the line cap that context/foundation/vision.md sets", async () => {
+	const cap = testLineCap(await readFile(join(root, "context/foundation/vision.md"), "utf8"));
+	assert.ok(cap, "context/foundation/vision.md names no cap for test/");
 	let lines = 0;
 	for (const path of await filesBelow(join(root, "test"))) {
 		lines += (await readFile(path, "utf8")).split("\n").length - 1;
 	}
 	assert.ok(
 		lines <= cap,
-		`test/ has ${lines} lines; spec/vision.md caps it at ${cap}. Remove ${lines - cap} test lines, or ask Adam to raise the cap.`,
+		`test/ has ${lines} lines; context/foundation/vision.md caps it at ${cap}. Remove ${lines - cap} test lines, or ask Adam to raise the cap.`,
 	);
 });

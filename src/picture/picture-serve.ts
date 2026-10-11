@@ -17,7 +17,7 @@ export type ServeOptions = {
 
 /**
  * Serves the picture on 127.0.0.1 and pushes job activity to the page over Server-Sent Events.
- * The page is built per request, so a reload shows the current tickets and board; activity is read once a second
+ * The page is built per request, so a reload shows the current changes; activity is read once a second
  * and sent only when it changed.
  */
 export async function servePicture(options: ServeOptions): Promise<{ url: string; close(): Promise<void> }> {

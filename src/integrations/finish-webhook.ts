@@ -7,8 +7,8 @@ import { basename, delimiter, dirname, isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isTerminal, type TerminalState } from "../job/job.ts";
 import { appendLimenLog, atomicWrite, textFile } from "../job/record.ts";
-import { currentBranch, listWorktrees, ticketAuthor, workspaceRoot } from "../project/git.ts";
-import { ticketPointers } from "../project/planning.ts";
+import { changeAuthor, currentBranch, listWorktrees, workspaceRoot } from "../project/git.ts";
+import { changePointers } from "../project/planning.ts";
 import {
 	finishEvent,
 	GITHUB_AUTHOR,
@@ -44,15 +44,15 @@ export function finishWebhookEnv(root: string, cwd: string, explicit = process.e
 }
 export function captureFinishAuthor(cwd: string, task: string, workspace = false): string {
 	if (workspace) {
-		return "unavailable\nnon-Git workspace ticket";
+		return "unavailable\nnon-Git workspace change";
 	}
-	const tickets = ticketPointers(task);
-	const ticket = tickets.length === 1 ? tickets[0]?.path : undefined;
-	if (!ticket) {
-		return `unavailable\n${tickets.length ? "ambiguous Ticket: pointer" : "missing Ticket: pointer"}`;
+	const changes = changePointers(task);
+	const change = changes.length === 1 ? changes[0]?.path : undefined;
+	if (!change) {
+		return `unavailable\n${changes.length ? "ambiguous Change: pointer" : "missing Change: pointer"}`;
 	}
 	try {
-		const author = ticketAuthor(cwd, ticket);
+		const author = changeAuthor(cwd, change);
 		const login = GITHUB_NOREPLY.exec(author.email)?.[1];
 		return login ? `@${login.toLowerCase()}\n${author.commit}` : `unavailable\nordinary email\n${author.commit}`;
 	} catch (error) {
@@ -63,8 +63,8 @@ export function captureFinishAuthor(cwd: string, task: string, workspace = false
 }
 const AUTHOR_LOOKUP_REASONS = [
 	["shallow", "shallow history"],
-	["not a committed file", "uncommitted ticket"],
-	["must be a file inside", "ticket path outside repository"],
+	["not a committed file", "uncommitted change"],
+	["must be inside", "change path outside repository"],
 	["no creation author", "no creation author"],
 ] as const;
 function senderResult(selection: string, code: number | null, signal: NodeJS.Signals | null): string {
@@ -278,11 +278,10 @@ export async function deliverLeadStepWebhook(
 		}
 		throw error;
 	}
-	const name = basename(feature);
-	const label = `${/^F\d+/.exec(name)?.[0] ?? name} lead ${step}`;
+	const label = `${basename(feature)} lead ${step}`;
 	const next = step === "close" ? "owner decision" : "owner decision on group/synthesis.md, or close the group";
 	const handoff = `Lead step done: ${label}. Next step: ${next}.`;
-	const login = captureFinishAuthor(root, `Ticket: ${feature}/ticket.md`).split("\n")[0] ?? "";
+	const login = captureFinishAuthor(root, `Change: ${feature}/`).split("\n")[0] ?? "";
 	const event: PlantEvent = {
 		kind: "lead.step-done",
 		status: "done",

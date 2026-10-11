@@ -12,7 +12,7 @@ import {
 import { dirname, join, resolve } from "node:path";
 import { coordinatorSignals } from "../src/integrations/coordinator-signal.ts";
 import { herdrBinary } from "../src/integrations/herdr.ts";
-import { closedFeatures, closedJobFeatures, derivePulse, isTerminal, type Pulse, SESSION_ID } from "../src/job/job.ts";
+import { closedJobChanges, derivePulse, isTerminal, type Pulse, SESSION_ID } from "../src/job/job.ts";
 import {
 	CLAIM_STALE_MS,
 	claimDelivery,
@@ -36,6 +36,7 @@ import {
 	subscribeSession,
 } from "../src/job/wake-delivery.ts";
 import { advisoryWake, completionWake } from "../src/job/wake-text.ts";
+import { closedChanges } from "../src/project/changes.ts";
 import { unlandedBranches } from "../src/project/git.ts";
 import { registerProject } from "../src/project/seat.ts";
 import {
@@ -299,7 +300,7 @@ export default function limenWake(pi: PiApi): void {
 			herdrCall(["tab", "rename", tab, next]);
 		}
 	};
-	// Lands and closes happen in Git and spec/, outside the jobs directory: refresh when a job leaves the running set, after each coordinator turn, and on the cache timer.
+	// Lands and closes happen in Git and context/, outside the jobs directory: refresh when a job leaves the running set, after each coordinator turn, and on the cache timer.
 	const finishedNow = (jobs: string, running: readonly string[]): readonly FinishedJob[] => {
 		const key = running.join("\n");
 		if (finishedCache && finishedCache.key === key && Date.now() < finishedCache.until) {
@@ -646,7 +647,7 @@ export default function limenWake(pi: PiApi): void {
 		try {
 			writeFileSync(join(limenDir, "last-sweep"), `${new Date(lastSweepAt).toISOString()}\n${sessionId}\n`);
 		} catch {
-			// F043 treats an absent or stale stamp as no listener; never claim liveness we could not write.
+			// An absent or stale stamp counts as no listener; never claim liveness we could not write.
 		}
 	};
 	const sweep = () => {
@@ -955,17 +956,14 @@ async function jobDisplay(
 				label,
 				pulse,
 				watching,
-				status: `${shortLabel(label)} ${pulse === "tool" && tool ? `${pulse}:${tool}` : pulse}${watching ? "" : " (unwatched)"}`,
+				status: `${label.trim()} ${pulse === "tool" && tool ? `${pulse}:${tool}` : pulse}${watching ? "" : " (unwatched)"}`,
 			};
 		}),
 	);
 	if (running.length === 0 && finished.length === 0) {
 		return undefined;
 	}
-	const summary = [
-		running.map(({ status }) => status),
-		finished.map(({ label, state }) => `${shortLabel(label)} ${state}`),
-	]
+	const summary = [running.map(({ status }) => status), finished.map(({ label, state }) => `${label.trim()} ${state}`)]
 		.filter((names) => names.length > 0)
 		.map((names) => `${names.slice(0, 3).join(" ")}${names.length > 3 ? ` +${names.length - 3}` : ""}`)
 		.join(" · ");
@@ -973,10 +971,10 @@ async function jobDisplay(
 		running.length === 0
 			? `Limen · ${finished.length} finished`
 			: running.length === 1
-				? `Limen · ${shortLabel(running[0]?.label ?? "")}`
+				? `Limen · ${(running[0]?.label ?? "").trim()}`
 				: `Limen · ${running.length} jobs · ${running
 						.slice(0, 3)
-						.map(({ label }) => shortLabel(label))
+						.map(({ label }) => label.trim())
 						.join(" ")}`;
 	return {
 		status: `limen ${running.length} · ${summary}`,
@@ -989,8 +987,8 @@ async function jobDisplay(
 /** Finished jobs this coordinator still answers for: terminal, spawned from its tab or watched by its session, not landed, and not closed. */
 function finishedJobs(jobs: string, tab: string | undefined, session: string): FinishedJob[] {
 	const root = dirname(dirname(jobs));
-	// `limen close` and this line share one rule: a job leaves once every feature it names is in done/ or dropped/.
-	const closed = closedFeatures(root);
+	// `limen close` and this line share one rule: a job leaves once every change its task names is archived or dropped.
+	const closed = closedChanges(root);
 	const candidates: Array<
 		FinishedJob & { readonly branch: string; readonly repo: string; readonly landable: boolean }
 	> = [];
@@ -1004,7 +1002,7 @@ function finishedJobs(jobs: string, tab: string | undefined, session: string): F
 			continue;
 		}
 		const label = text(join(job, "label")) || id;
-		if (closedJobFeatures(label, id, closed).length > 0) {
+		if (closedJobChanges(text(join(job, "task.md")), closed).length > 0) {
 			continue;
 		}
 		const finishedAt = Date.parse(text(join(job, "finished-at"))) || 0;
@@ -1018,7 +1016,7 @@ function finishedJobs(jobs: string, tab: string | undefined, session: string): F
 			landable: text(join(job, "commits")) !== "",
 		});
 	}
-	// Only a job with commits can land. Without commits it stays until its feature closes or `limen prune` retires the record.
+	// Only a job with commits can land. Without commits it stays until its change closes or `limen prune` retires the record.
 	const landed = new Set<string>();
 	for (const [repo, group] of Map.groupBy(
 		candidates.filter(({ landable, branch }) => landable && branch),
@@ -1132,18 +1130,6 @@ function herdrDisplayAgent(pulses: readonly Pulse[], leadIdle: boolean): string 
 	}
 	const jobs = `${pulses.length} ${pulses.length === 1 ? "job" : "jobs"}`;
 	return leadIdle ? `Limen · waiting on ${jobs}` : `Limen · ${jobs}`;
-}
-function shortLabel(label: string): string {
-	const name = label.trim();
-	const feature = /\bF\d{3,}\b/i.exec(name)?.[0];
-	if (!feature) {
-		return name;
-	}
-	const legacy = /^(F\d{3,})(?:-([^\s]+))?(?:\s+(.+))?$/i.exec(name);
-	const words = (legacy ? legacy[3] || legacy[2]?.replaceAll("-", " ") || "" : name.replace(feature, ""))
-		.replace(/^[\s·-]+|[\s·-]+$/g, "")
-		.replace(/\s+/g, " ");
-	return words ? `${words} · ${feature.toUpperCase()}` : feature.toUpperCase();
 }
 function stateOf(jobs: string, id: string): string {
 	return text(join(jobs, id, "state"));

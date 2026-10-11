@@ -1,0 +1,131 @@
+{
+  "version": 1,
+  "skills": {
+    "dx-archive": {
+      "source": "dikamilo/dx-workflow",
+      "sourceType": "github",
+      "skillPath": "skills/dx-archive/SKILL.md",
+      "computedHash": "4d226d523e583c22e319d567a99c1be7f0d89248e08fecfa20f85e1f65f9a6a5"
+    },
+    "dx-brainstorm": {
+      "source": "dikamilo/dx-workflow",
+      "sourceType": "github",
+      "skillPath": "skills/dx-brainstorm/SKILL.md",
+      "computedHash": "b2e0cb080459f631b0793120b9aac1b2c846786b51d776fbeb8e7fa077b60a74"
+    },
+    "dx-diagnose": {
+      "source": "dikamilo/dx-workflow",
+      "sourceType": "github",
+      "skillPath": "skills/dx-diagnose/SKILL.md",
+      "computedHash": "d24d098dff8bc44a7e7cdb65f328050f686b95c1432b991d62c7787fe5de8f61"
+    },
+    "dx-distill": {
+      "source": "dikamilo/dx-workflow",
+      "sourceType": "github",
+      "skillPath": "skills/dx-distill/SKILL.md",
+      "computedHash": "df53ee1a7a6f6926e0bb9b4f3f40889076bc79a0684296bdfaa7f2d759f7d529"
+    },
+    "dx-domain": {
+      "source": "dikamilo/dx-workflow",
+      "sourceType": "github",
+      "skillPath": "skills/dx-domain/SKILL.md",
+      "computedHash": "ef5c6bdf6382984b299301869db5799186acc42ebc8951b368fcbd61f6e25cab"
+    },
+    "dx-domain-discover": {
+      "source": "dikamilo/dx-workflow",
+      "sourceType": "github",
+      "skillPath": "skills/dx-domain-discover/SKILL.md",
+      "computedHash": "d782b6bbb3c13cc4aee4fa61fc9f0488f19f01c03cccc6763c955041b4a20fc6"
+    },
+    "dx-frame": {
+      "source": "dikamilo/dx-workflow",
+      "sourceType": "github",
+      "skillPath": "skills/dx-frame/SKILL.md",
+      "computedHash": "9599ebff0adae60c6dba789451274d3c7fc255b4bb5deac886805063a5904d0c"
+    },
+    "dx-implement": {
+      "source": "dikamilo/dx-workflow",
+      "sourceType": "github",
+      "skillPath": "skills/dx-implement/SKILL.md",
+      "computedHash": "dc17ed20a10e14f6225ec09230c9184764c277a103c7199f20972614f1ce84a8"
+    },
+    "dx-init": {
+      "source": "dikamilo/dx-workflow",
+      "sourceType": "github",
+      "skillPath": "skills/dx-init/SKILL.md",
+      "computedHash": "9ab99f9fc493b6e9dbc4699c288b263778e34a855e30d2fa251d36e6134c2901"
+    },
+    "dx-lesson": {
+      "source": "dikamilo/dx-workflow",
+      "sourceType": "github",
+      "skillPath": "skills/dx-lesson/SKILL.md",
+      "computedHash": "d6d5b789e6cce143e95cdfc440086795878f4a632181c6549cbbbbb5370c8e91"
+    },
+    "dx-new": {
+      "source": "dikamilo/dx-workflow",
+      "sourceType": "github",
+      "skillPath": "skills/dx-new/SKILL.md",
+      "computedHash": "43758160d79a554e7430afa9c527b9111f8f6bc8c0734811d0a474feefd62f63"
+    },
+    "dx-plan": {
+      "source": "dikamilo/dx-workflow",
+      "sourceType": "github",
+      "skillPath": "skills/dx-plan/SKILL.md",
+      "computedHash": "fe0020930110f76d8c36b31e8238fdede398c13bf3e1416b99d198b045945b33"
+    },
+    "dx-refactor-discover": {
+      "source": "dikamilo/dx-workflow",
+      "sourceType": "github",
+      "skillPath": "skills/dx-refactor-discover/SKILL.md",
+      "computedHash": "bd6e7f1c56ed557ea428858816e56582a330ff087057aa776ffa97ec601c6877"
+    },
+    "dx-references": {
+      "source": "dikamilo/dx-workflow",
+      "sourceType": "github",
+      "skillPath": "skills/dx-references/SKILL.md",
+      "computedHash": "96e6a04777cef68b656288bdaaeb1f43a97719f076d4a7fb892970b19aaf3bf5"
+    },
+    "dx-research": {
+      "source": "dikamilo/dx-workflow",
+      "sourceType": "github",
+      "skillPath": "skills/dx-research/SKILL.md",
+      "computedHash": "6bffc7222cba5065b6ff2d93a1894aa26f2f2e425176299b3b3f5a1c3851726e"
+    },
+    "dx-review": {
+      "source": "dikamilo/dx-workflow",
+      "sourceType": "github",
+      "skillPath": "skills/dx-review/SKILL.md",
+      "computedHash": "a793b943d70e7f554af2fec1fb870fd9b03811d51b0ad3d31f54f838b37ce36f"
+    },
+    "dx-review-triage": {
+      "source": "dikamilo/dx-workflow",
+      "sourceType": "github",
+      "skillPath": "skills/dx-review-triage/SKILL.md",
+      "computedHash": "136163b3061ea13eabaf50eb95a57fdc20dd36f3a4df02cd2cdb1641a685069d"
+    },
+    "dx-roadmap": {
+      "source": "dikamilo/dx-workflow",
+      "sourceType": "github",
+      "skillPath": "skills/dx-roadmap/SKILL.md",
+      "computedHash": "c90fd8726dd8459419c892ea136fc5f20738489bec6c9f17965140d49397e897"
+    },
+    "dx-standards-discover": {
+      "source": "dikamilo/dx-workflow",
+      "sourceType": "github",
+      "skillPath": "skills/dx-standards-discover/SKILL.md",
+      "computedHash": "05b9a36a4f4a7e4069b933de3535492db30c20a3c0eaa83a1f3f454e74450c65"
+    },
+    "dx-standards-update": {
+      "source": "dikamilo/dx-workflow",
+      "sourceType": "github",
+      "skillPath": "skills/dx-standards-update/SKILL.md",
+      "computedHash": "bdaf23827d17e89ffd474ad6db410ebbbc46595c0d2a90bfb59359af6d0b78fc"
+    },
+    "dx-tdd": {
+      "source": "dikamilo/dx-workflow",
+      "sourceType": "github",
+      "skillPath": "skills/dx-tdd/SKILL.md",
+      "computedHash": "33c447f4dc2dcf473b2253aec7cb1ac09292254fe8319b60f77c2b75d4b5fd82"
+    }
+  }
+}

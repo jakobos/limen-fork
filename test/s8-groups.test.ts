@@ -9,6 +9,7 @@ import { after, before, test } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import {
+	CHANGE,
 	engineEvents,
 	git,
 	jobDir,
@@ -19,13 +20,12 @@ import {
 	plant,
 	release,
 	requests,
-	TICKET,
 	until,
 	waitJob,
 } from "./plant.ts";
 
 const PEER = fileURLToPath(new URL("../hook/group-peer.ts", import.meta.url));
-const FEATURE = dirname(TICKET);
+const FEATURE = CHANGE.slice(0, -1);
 const LEAD = { PI_SESSION_ID: "s8-lead" };
 const ROUTE = ["--engine", "omp", "--provider", "fake", "--model", "fake-1", "--thinking", "high", "--detached"];
 const SETTINGS = [
@@ -107,7 +107,7 @@ const as = (id: string, team: string) => ({
 	LIMEN_TEAM_ID: team,
 });
 const delivered = () => engineEvents(lead).filter((entry) => entry.text?.startsWith("[limen-group-delivery:"));
-const pings = (step: string) => requests(p).filter((request) => JSON.parse(request.body).job === `F001 lead ${step}`);
+const pings = (step: string) => requests(p).filter((request) => JSON.parse(request.body).job === `demo lead ${step}`);
 
 test("a stale lead registration starts nothing; two concurrent activations by the lead start one roster in one cabinet", async () => {
 	// A registration no running hook refreshes is not a lead: no update would reach it.

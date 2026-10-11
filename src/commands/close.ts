@@ -1,10 +1,10 @@
-import { closeFeatureTabs } from "../integrations/herdr.ts";
+import { closeChangeTabs } from "../integrations/herdr.ts";
 import { limenRoot } from "../project/git.ts";
 
 export async function closeCommand(args: readonly string[], cwd: string): Promise<void> {
-	const feature = args[0];
-	if (!feature || args.length !== 1) {
-		throw new Error("close requires a feature like F012");
+	const change = args[0];
+	if (!change || args.length !== 1) {
+		throw new Error("close requires a change id like oauth-login");
 	}
-	console.log(await closeFeatureTabs({ root: limenRoot(cwd), feature }));
+	console.log(await closeChangeTabs({ root: limenRoot(cwd), change }));
 }
